@@ -12,13 +12,13 @@ Key paths
 Project root: <your_local_repo>/morph
 Binary:       <your_local_repo>/morph/build/morph
 Launcher:     <your_local_repo>/morph/testing/morph_run
-Prod wrapper: /usr/local/bin/morph-session (or your package prefix bindir)
-Env file:     <your_local_repo>/morph/config/environment
-Default cfg:  <your_local_repo>/morph/testing/morph.conf
+Runtime wrapper: /usr/local/bin/morph-session (or your package prefix bindir)
+Env file:     <your_local_repo>/morph/testing/config/environment
+Default cfg:  <your_local_repo>/morph/testing/config/morph.conf
 System startup:  <your_local_repo>/morph/scripts/system_startup.sh
 System reload:   <your_local_repo>/morph/scripts/system_reload.sh
 System shutdown: <your_local_repo>/morph/scripts/system_shutdown.sh
-Portals:      <your_local_repo>/morph/config/portals
+Portals:      <your_local_repo>/morph/testing/config/portals
 Shell tests:  <your_local_repo>/morph/tests/test_shell_runtime.sh
 
 Runtime log location
@@ -74,7 +74,7 @@ The current automated run covers:
   - managed user hook execution and config hook parsing
   - portal runtime variable logging
   - managed shutdown cleanup
-  - production wrapper resolve-only checks
+- runtime wrapper resolve-only checks
   - Meson install manifest coverage for runtime artifacts
 
 Use this runbook for everything that still needs manual session validation.
@@ -85,11 +85,11 @@ A) Launcher config model
 The launcher resolves settings in this order:
 1) Caller environment (one-shot VAR=... ./testing/morph_run)
 2) User environment file under `~/.config/morph` / XDG config home
-3) System environment file (`config/environment` in the current dev flow, or `MORPH_ENV_FILE` when set)
+3) System environment file (`testing/config/environment` in the current dev flow, or `MORPH_ENV_FILE` when set)
 4) Built-in defaults in testing/morph_run
 
 Note:
-config/environment is override-oriented. Values can stay commented out.
+testing/config/environment is override-oriented. Values can stay commented out.
 
 
 B) Debug mode matrix (MORPH_DBG)
@@ -225,7 +225,7 @@ Use when validating compositor flags directly:
 
   cd <your_local_repo>/morph
   ./build/morph \
-    -c ./testing/morph.conf \
+    -c ./testing/config/morph.conf \
     --log-level debug \
     --log-file ~/.local/state/morph/morph.log \
     --crash-log ~/.local/state/morph/morph-crash.log
@@ -237,7 +237,7 @@ Use only to validate crash marker output:
 
   cd <your_local_repo>/morph
   ./build/morph \
-    -c ./testing/morph.conf \
+    -c ./testing/config/morph.conf \
     --log-level debug \
     --log-file ~/.local/state/morph/morph.log \
     --crash-log ~/.local/state/morph/morph-crash.log \

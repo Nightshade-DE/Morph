@@ -1,6 +1,6 @@
 # Morph configuration
 
-This file documents the **INI-style** configuration read at compositor startup. The format is line-oriented: sections in square brackets, `key = value` pairs, `#` comments, and blank lines ignored.
+This file documents the **INI-style** configuration read at compositor startup. The format is line-oriented: sections in square brackets, `key = value` pairs, `#` comments, and blank lines are ignored.
 
 ## Where the file is loaded from
 
@@ -11,7 +11,7 @@ This file documents the **INI-style** configuration read at compositor startup. 
    - `~/.config/morph/morph.conf`
    - `/etc/morph/morph.conf`
 
-If no file is found, startup fails with a log message instead of silently continuing without a config. You can opt into the old synthesized-default behavior with **`--allow-builtin-fallback`** or **[`MORPH_ALLOW_BUILTIN_FALLBACK=1`](ENVIRONMENT.md#morph-allow-builtin-fallback)**. If the file exists but defines **no** `[bind]` entries, **built-in binds** are still synthesized as a compatibility fallback.
+If no file is found, startup stops with a log message instead of silently continuing without a config. You can opt into the built-in fallback behavior with **`--allow-builtin-fallback`** or **[`MORPH_ALLOW_BUILTIN_FALLBACK=1`](ENVIRONMENT.md#morph-allow-builtin-fallback)**. If the file exists but defines **no** `[bind]` entries, **built-in binds** are still generated as a compatibility fallback.
 
 A starting point for your own file is **`morph.conf.example`** in this repository.
 
@@ -23,7 +23,7 @@ Further launcher details are documented in:
 
 - `docs/LAUNCHER.md`
 
-This keeps docs/CONFIG.md focused on INI syntax and behavior.
+This keeps `docs/CONFIG.md` focused on INI syntax and behavior.
 
 ---
 
@@ -138,14 +138,6 @@ output = DP-2
 type = tablet
 ```
 
-## Section `[pointer]` (legacy compatibility)
-
-Morph still accepts a **`[pointer]`** section with **`resize_border_px`** or **`resize_border`** so older configs do not fail to load. These keys are kept for backward compatibility only: the compositor now uses a fixed minimal outside-edge resize zone and ignores the configured value.
-
-| Key | Meaning |
-|-----|---------|
-| **`resize_border_px`** / **`resize_border`** | Accepted and ignored. Keep only if you need to preserve compatibility with older config files. |
-
 ## Actions reference
 
 Unless noted, tiling-related actions are **no-ops** when not in **tile** layout, when there is **no focused** toplevel, when the focused surface is **unmapped**, or when the focused window is a **tile float** (floating within tile mode).
@@ -220,7 +212,7 @@ Rules control how individual XDG toplevels behave in **tile** layout. **First ma
 | **`mode`** | **`tile`** / **`tiled`** (default): normal grid cell. **`float`** / **`floating`**: not placed in the grid; shown centered when mapped and raised on focus in tile mode. |
 | **`order`** | Integer; **lower** values sort **earlier** in the tile list among tiled windows. |
 
-If both **`app_id`** and **`title`** are set on a rule, **both** must match. At least one of **`app_id`** or **`title`** must be present for a flushed rule to apply.
+If both **`app_id`** and **`title`** are set on a rule, **both** must match. At least one of **`app_id`** or **`title`** must be present for the rule to apply.
 
 ---
 
@@ -228,7 +220,7 @@ If both **`app_id`** and **`title`** are set on a rule, **both** must match. At 
 
 From another terminal you can send one-line commands to a running instance (Unix socket under **`$XDG_RUNTIME_DIR/morph-ipc.sock`** when IPC is enabled), for example:
 
-These are the current compositor entrypoints for local control. The Wayland-facing workspace protocol is intentionally narrower for now: **`activate`** works, while **`create_workspace`**, **`remove_workspace`**, and **`assign_workspace`** are still no-ops for external clients that talk to **`ext_workspace_manager_v1`**.
+These are the current compositor control commands for local use. The Wayland-facing workspace protocol is intentionally narrower for now: **`activate`** works, while **`create_workspace`**, **`remove_workspace`**, and **`assign_workspace`** are still no-ops for external clients that talk to **`ext_workspace_manager_v1`**.
 
 - **`layout stack`**, **`layout tile`**, **`layout scroll`**, **`layout toggle`**
 - **`tile move …`** (same semantics as sort-order actions above)

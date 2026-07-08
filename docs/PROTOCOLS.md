@@ -1,8 +1,8 @@
-# Wayland protocols and desktop integration In **Morph**
+# Wayland protocols and desktop integration in **Morph**
 
-This document lists what **Morph** actually advertises and handles today, what **wlroots** adds implicitly when you call its helpers, and what is **not** implemented. It is derived from [`src/main.c`](src/main.c), [`meson.build`](meson.build), and wlroots 0.19 behavior.
+This document lists what **Morph** exposes today, what **wlroots** adds through its helper functions, and what is still missing. It is based on [`src/main.c`](src/main.c), [`meson.build`](meson.build), and wlroots 0.19 behavior.
 
-**Important distinction:** **xdg-desktop-portal** (settings, file chooser, screen cast, etc.) talks to implementations over **D-Bus** and, for some features, expects the **Wayland compositor** to expose specific **Wayland protocol** extensions (often **wlroots**-specific unstable ones). **Morph** exposes a **moderate** set of globals suitable for tiling, panels, capture, and games; several desktop/portal features still need more protocols or session services.
+**Important distinction:** **xdg-desktop-portal** (settings, file chooser, screen cast, and similar features) talks to implementations over **D-Bus** and, for some features, expects the **Wayland compositor** to expose specific **Wayland protocol** extensions. **Morph** exposes a **moderate** set of globals for tiling, panels, capture, and games; several desktop and portal features still need more protocols or session services.
 
 ---
 
@@ -64,9 +64,9 @@ From the seat and cursor wiring in `main.c`:
 
 ## xdg-desktop-portal and session integration
 
-Tools like **xdg-desktop-portal-wlr** expect a mix of **D-Bus** and compositor Wayland globals:
+Tools such as **xdg-desktop-portal-wlr** expect a mix of **D-Bus** and compositor Wayland globals:
 
-| Need (examples) | Typical Wayland / wlroots side | In **Morph**? |
+| Need (examples) | Typical Wayland / wlroots side | In Morph? |
 |-----------------|----------------------------------|---------------|
 | Screen / window capture (grim-style) | `zwlr_screencopy_unstable_v1` | **Yes** |
 | PipeWire portal capture (some paths) | screencopy + **export-dmabuf** | **Partial** (no export-dmabuf) |
@@ -76,7 +76,7 @@ Tools like **xdg-desktop-portal-wlr** expect a mix of **D-Bus** and compositor W
 | File open/save (portal) | Mostly D-Bus + GTK/Qt | Often works without extra globals |
 | Games / confined pointer | pointer constraints + relative pointer | **Yes** |
 
-A working portal still needs **`xdg-desktop-portal`** + a backend (e.g. **xdg-desktop-portal-wlr**) in the session, even when the compositor exposes screencopy.
+A working portal still needs **`xdg-desktop-portal`** plus a backend such as **xdg-desktop-portal-wlr** in the session, even when the compositor exposes screencopy.
 
 ---
 

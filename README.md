@@ -29,14 +29,13 @@ See [`docs/PROTOCOLS.md`](docs/PROTOCOLS.md) for the exact matrix of implemented
 
 | Path | Purpose |
 |---|---|
-| [`config/`](config/) | Runtime defaults, user hook templates, portal setup, and sample `morph.conf` |
+| [`config/`](config/) | Runtime defaults, user hook templates, portal setup, and sample [`morph.conf`](config/morph.conf) |
 | [`docs/`](docs/) | Current project documentation |
-| [`docs_old/`](docs_old/) | Archived previous documentation snapshot kept during the current doc restructure |
 | [`protocols/`](protocols/) | Wayland protocol XML files used for generated protocol code |
 | [`scripts/`](scripts/) | Session wrappers, install helpers, and managed lifecycle scripts |
-| [`sessions/`](sessions/) | Desktop entries for production and development sessions |
+| [`sessions/`](sessions/) | Desktop entries for runtime and development sessions |
 | [`src/`](src/) | Morph compositor source code |
-| [`testing/`](testing/) | Manual runbooks, launcher assets, and example session files |
+| [`testing/`](testing/) | Manual runbooks, launcher assets, and dev-only session files under `testing/config/` |
 | [`tests/`](tests/) | Automated tests for config and shell/runtime behavior |
 
 ## What to Read First
@@ -46,7 +45,8 @@ See [`docs/PROTOCOLS.md`](docs/PROTOCOLS.md) for the exact matrix of implemented
 - [`docs/LAUNCHER.md`](docs/LAUNCHER.md) for wrapper behavior, managed hooks, and runtime files
 - [`docs/CLI.md`](docs/CLI.md) for binary command-line flags and IPC-aware runtime control
 - [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md) for runtime environment variables and XKB-related settings
-- [`docs/TESTING.md`](docs/TESTING.md) for build, test, smoke-check, and manual validation workflows
+- [`INSTALL.md`](INSTALL.md) for dependencies, runtime/dev install paths, and uninstall flows
+- [`docs/TESTING.md`](docs/TESTING.md) for build, test, smoke-check, and manual validation runbooks
 
 ## Build and Run
 
@@ -82,18 +82,12 @@ For the broader local workflow, including smoke checks and manual validation ent
 
 ## Install Paths
 
-`meson install -C build` installs:
+See [`INSTALL.md`](INSTALL.md) for:
 
-- `morph` and `morph-session` under the configured `bindir`
-- runtime hooks and base files under `sysconfdir/morph`
-- `morph.desktop` under `share/wayland-sessions`
-- selected docs and reference files under `share/doc/morph`
-
-For development installs and conservative uninstall behavior, see:
-
-- [`scripts/dev-install.sh`](scripts/dev-install.sh)
-- [`scripts/system-uninstall.sh`](scripts/system-uninstall.sh)
-- [`docs/LAUNCHER.md`](docs/LAUNCHER.md)
+- build dependencies
+- runtime install and uninstall
+- development install and uninstall
+- the current install target layout
 
 ## Runtime Notes
 

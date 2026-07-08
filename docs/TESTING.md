@@ -1,6 +1,6 @@
 # Testing Guide
 
-This document describes the overall testing workflow for morph.
+This document describes the overall testing workflow for Morph.
 
 Use it when you want to:
 
@@ -82,7 +82,7 @@ The local helper also includes a nested smoke run:
 ```
 
 This is useful when you want a quick sanity check that the compositor still
-comes up in a nested environment after build changes.
+starts in a nested environment after build changes.
 
 ## Manual Validation Runbooks
 
@@ -97,8 +97,8 @@ Use these files:
 - [`testing/testplan-manual-morph.nfo`](../testing/testplan-manual-morph.nfo)
   For the broader manual lifecycle, install, uninstall, hook, and fallback test plan.
 
-These runbooks are the right place for end-to-end checks that depend on a real
-session, display manager, nested compositor, or log inspection with `rg`.
+These runbooks are the right place for end-to-end checks that need a real
+session, a display manager, a nested compositor, or log inspection with `rg`.
 
 ## Logs and Troubleshooting
 

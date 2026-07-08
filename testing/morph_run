@@ -20,8 +20,8 @@ export COMP_ROOT_DIR
 
 # Dev launcher defaults for the "system" layer used inside this repository.
 MORPH_SYSTEM_HOOK_DIR_DEFAULT="$COMP_ROOT_DIR/scripts"
-MORPH_SYSTEM_CONFIG_DIR_DEFAULT="$COMP_ROOT_DIR/config"
-MORPH_SYSTEM_CONFIG_FILE_DEFAULT="$COMP_ROOT_DIR/testing/morph.conf"
+MORPH_SYSTEM_CONFIG_DIR_DEFAULT="$COMP_ROOT_DIR/testing/config"
+MORPH_SYSTEM_CONFIG_FILE_DEFAULT="$COMP_ROOT_DIR/testing/config/morph.conf"
 MORPH_BIN_DEFAULT="$COMP_ROOT_DIR/build/morph"
 
 # Capture one caller-provided value so sourced environment files cannot silently

@@ -1160,6 +1160,7 @@ bool comp_config_load(const char *path, struct comp_config **cfg_out) {
 	char linebuf[4096];
 	size_t line_no = 0;
 	bool ok = true;
+	bool warned_pointer_compat = false;
 
 	/* Single-pass parser: section switches flush pending block state. */
 	while (fgets(linebuf, sizeof(linebuf), f)) {
@@ -1367,6 +1368,10 @@ bool comp_config_load(const char *path, struct comp_config **cfg_out) {
 			if (!strcasecmp(line, "resize_border_px") || !strcasecmp(line, "resize_border")) {
 				/* Backward compatibility only: parsed to avoid startup failure on legacy
 				 * configs, but the compositor now uses a fixed minimal outside edge zone. */
+				if (!warned_pointer_compat) {
+					wlr_log(WLR_INFO, "%s:%zu: ignoring legacy pointer key '%s'", path, line_no, line);
+					warned_pointer_compat = true;
+				}
 				(void)eq;
 			} else {
 				wlr_log(WLR_ERROR, "%s:%zu: unknown pointer key '%s'", path, line_no, line);

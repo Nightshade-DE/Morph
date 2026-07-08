@@ -252,6 +252,43 @@ morph_config_hook_from_file() {
 # Run a user hook command from the active config, or fall back to the standard
 # XDG user hook path when the managed runtime was enabled without an explicit
 # hook entry for that lifecycle phase.
+morph_resolve_hook_path() {
+    hook_cmd="$1"
+    expanded_hook_cmd=""
+
+    case "$hook_cmd" in
+        "")
+            return 1
+            ;;
+        *[\`\;\|\&\<\>\(\)\"\'\ \	]*)
+            # Commands with shell syntax must stay shell commands. This helper
+            # only resolves path-like hook entries so managed helpers remain
+            # available when the hook file is sourced in-process.
+            return 1
+            ;;
+    esac
+
+    case "$hook_cmd" in
+        "~")
+            expanded_hook_cmd="$HOME"
+            ;;
+        "~/"*)
+            expanded_hook_cmd="$HOME/${hook_cmd#~/}"
+            ;;
+        *)
+            expanded_hook_cmd="$hook_cmd"
+            ;;
+    esac
+
+    expanded_hook_cmd=$(eval "printf '%s' \"$expanded_hook_cmd\"")
+
+    if [ -z "$expanded_hook_cmd" ]; then
+        return 1
+    fi
+
+    printf '%s\n' "$expanded_hook_cmd"
+}
+
 morph_run_optional_user_hook() {
     hook_kind="$1"
     hook_cmd="$2"
@@ -259,17 +296,10 @@ morph_run_optional_user_hook() {
     hook_cmd_path=""
 
     if [ -n "$hook_cmd" ]; then
-        case "$hook_cmd" in
-            *[\`\$\;\|\&\<\>\(\)\{\}\"\'\ \	]*)
-                hook_cmd_path=""
-                ;;
-            *)
-                # A plain file path should run in the current shell so user
-                # hook files can directly use managed helper functions such as
-                # launch() and reload() without re-sourcing the helper library.
-                hook_cmd_path=$(eval "printf '%s' \"$hook_cmd\"")
-                ;;
-        esac
+        # Resolve path-like hook entries first so config values such as
+        # ${MORPH_SYSTEM_CONFIG_DIR}/startup.sh and ~/.config/... keep working
+        # as sourceable hook files instead of being downgraded to sh -c calls.
+        hook_cmd_path="$(morph_resolve_hook_path "$hook_cmd" || true)"
 
         if [ -n "$hook_cmd_path" ] && [ -r "$hook_cmd_path" ]; then
             log_message INFO "Sourcing user $hook_kind hook file from config: $hook_cmd_path"

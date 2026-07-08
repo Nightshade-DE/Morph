@@ -15,9 +15,9 @@ Key paths
 Project root:   <your_local_repo>/morph
 Binary:         <your_local_repo>/morph/build/morph
 Dev launcher:   <your_local_repo>/morph/testing/morph_run
-Prod wrapper:   morph-session
+Runtime wrapper: morph-session
 Dev wrapper:    /usr/local/bin/morph-dev-session
-Default config: <your_local_repo>/morph/testing/morph.conf
+Default config: <your_local_repo>/morph/testing/config/morph.conf
 User config:    ~/.config/morph/morph.conf
 System config:  /etc/morph/morph.conf
 
@@ -46,7 +46,7 @@ Expected:
 - config and shell-runtime tests pass
 
 
-1) Resolve-only config/environment check
+1) Resolve-only config/environment check (dev tree under testing/config)
 ----------------------------------------
 Use this to validate priority handling without starting a full session:
 
@@ -194,7 +194,7 @@ Expected:
 - sudo help prints the dev-session commands for `/usr/local/bin` and `/usr/share/wayland-sessions`
 
 
-10) Production install and uninstall
+10) Runtime install and uninstall
 ------------------------------------
 Inspect install manifest:
 
@@ -271,6 +271,6 @@ Mark these after you have verified them yourself:
 - [ ] Config priority
 - [ ] Environment priority
 - [ ] Dev install helper output
-- [ ] Production install manifest
+- [ ] Runtime install manifest
 - [ ] Conservative uninstall preview
 - [ ] Session desktop entries

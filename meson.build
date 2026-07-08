@@ -159,7 +159,7 @@ install_data(
     'docs/TESTING.md',
     'docs/ENVIRONMENT.md',
     'docs/LAUNCHER.md',
-    'testing/morph.conf',
+    'testing/config/morph.conf',
     'testing/test-howto_start-variants.nfo',
   ),
   install_dir: morph_doc_dir,

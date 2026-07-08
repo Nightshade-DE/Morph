@@ -1,6 +1,6 @@
 # Morph Overview
 
-This document is the main entry point for **Morph**'s documentation. Use it to understand how the repository is organized, which document answers which question, and how the managed session lifecycle is assembled.
+This document is the main entry point for **Morph**'s documentation. Use it to understand how the repository is organized, which document answers which question, and how the managed session lifecycle fits together.
 
 ## Table of Contents
 
@@ -46,21 +46,21 @@ This section is intentionally more detailed than the root [`README.md`](../READM
 | Path || Description |
 |---|---|---|
 |└─ [`config/`](../config/) | Runtime defaults and managed session files for **Morph**. ||
-|    |└─ [`environment`](../config/environment) | **Morph** runtime environment defaults. Is sourced by [`testing/morph_run`](../testing/morph_run) and [`scripts/morph-session`](../scripts/morph-session). |
-|    |└─ [`morph.conf`](../config/morph.conf) | Used working copy of [`docs/morph.conf.example`](morph.conf.example) installed to `/etc/morph/`. Can be overridden by copying it to `~/.config/morph/`. |
-|    |└─ [`portals`](../config/portals) | Portal startup script for native sessions installed to `/etc/morph/`. Can be overridden by copying it to `~/.config/morph/`. |
-|    |└─ [`reload.sh`](../config/reload.sh) | User reload hook. See [`Reload Resolution`](LAUNCHER.md#reload-resolution) in `docs/LAUNCHER.md`. |
-|    |└─ [`shutdown.sh`](../config/shutdown.sh) | User shutdown hook. See [`Shutdown Hook Resolution`](LAUNCHER.md#shutdown-hook-resolution) in `docs/LAUNCHER.md`. |
-|    |└─ [`startup.sh`](../config/startup.sh) | User startup hook. See [`Startup Hook Resolution`](LAUNCHER.md#startup-hook-resolution) in `docs/LAUNCHER.md`. |
+|    |└─ [`environment`](../config/environment) | Runtime environment defaults installed to `/etc/morph/environment` and used by [`scripts/morph-session`](../scripts/morph-session). |
+|    |└─ [`morph.conf`](../config/morph.conf) | Runtime base config installed to `/etc/morph/morph.conf`. Can be overridden by copying it to `~/.config/morph/`. |
+|    |└─ [`portals`](../config/portals) | Runtime portal startup script installed to `/etc/morph/`. Can be overridden by copying it to `~/.config/morph/`. |
+|    |└─ [`reload.sh`](../config/reload.sh) | Runtime user reload hook template. See [`Reload Resolution`](LAUNCHER.md#reload-resolution) in `docs/LAUNCHER.md`. |
+|    |└─ [`shutdown.sh`](../config/shutdown.sh) | Runtime user shutdown hook template. See [`Shutdown Hook Resolution`](LAUNCHER.md#shutdown-hook-resolution) in `docs/LAUNCHER.md`. |
+|    |└─ [`startup.sh`](../config/startup.sh) | Runtime user startup hook template. See [`Startup Hook Resolution`](LAUNCHER.md#startup-hook-resolution) in `docs/LAUNCHER.md`. |
 |└─ [`docs/`](.) | Project and developer documentation. ||
-|    |└─ [`OVERVIEW.md`](OVERVIEW.md) | Central reading guide, repository map, and managed session flow entrypoint. |
+|    |└─ [`OVERVIEW.md`](OVERVIEW.md) | Central reading guide, repository map, and managed session flow entry point. |
 |    |└─ [`LAUNCHER.md`](LAUNCHER.md) | Shared wrapper behavior for [`morph_run`](../testing/morph_run) and [`morph-session`](../scripts/morph-session). |
 |    |└─ [`ENVIRONMENT.md`](ENVIRONMENT.md) | Runtime environment variables, environment-layer behavior, and XKB notes. |
 |    |└─ [`CLI.md`](CLI.md) | Binary command-line flags and IPC-aware runtime control behavior. |
 |    |└─ [`CONFIG.md`](CONFIG.md) | Overview of **Morph** config format, sections, and behavior. |
 |    |└─ [`COMPOSITOR.md`](COMPOSITOR.md) | Compositor architecture, features, and implementation notes. |
 |    |└─ [`PROTOCOLS.md`](PROTOCOLS.md) | **Morph** Wayland and portal-related protocol support, gaps, and expectations. |
-|    |└─ [`TESTING.md`](TESTING.md) | General workflow, build/test loop, smoke checks, and manual validation entrypoints. |
+|    |└─ [`TESTING.md`](TESTING.md) | General workflow, build/test loop, smoke checks, and manual validation entry points. |
 |    |└─ [`TESTS.md`](TESTS.md) | Automated test scope, test commands, and where to inspect failures. |
 |    |└─ [`CRASHING.md`](CRASHING.md) | Crash handling, crash logs, and post-mortem debugging. |
 |    |└─ [`DEVFAQ.md`](DEVFAQ.md) | Developer troubleshooting notes, common pitfalls, and workflow hints. |
@@ -71,18 +71,25 @@ This section is intentionally more detailed than the root [`README.md`](../READM
 |    |   └─ [`Roadmap.de.md`](roadmaps/Roadmap.de.md) | German roadmap notes and follow-up tracking. |
 | [`protocols/`](../protocols/) | Wayland protocol XML files for headers and generated sources. ||
 | [`scripts/`](../scripts/) | Helpers for startup, reload, shutdown, install, and session management. ||
-|    |└─ [`dev-install.sh`](../scripts/dev-install.sh) | Development install script for **Morph** runtime files and helper symlinks. |
-|    |└─ [`morph-session`](../scripts/morph-session) | Production **Morph** session wrapper. Resolves environment, config, logs, and session mode for real sessions. |
+|    |└─ [`dev-install.sh`](../scripts/dev-install.sh) | Development install script for **Morph** runtime files and helper symlinks from [`testing/config/`](../testing/config/). |
+|    |└─ [`morph-session`](../scripts/morph-session) | Installed runtime **Morph** session wrapper. It resolves environment, config, logs, and session mode for real sessions. |
 |    |└─ [`shell-helpers.sh`](../scripts/shell-helpers.sh) | Shared shell helper library used throughout the managed session flow. |
 |    |└─ [`system_reload.sh`](../scripts/system_reload.sh) | System reload script for managed config reloads. |
 |    |└─ [`system_shutdown.sh`](../scripts/system_shutdown.sh) | System shutdown script for managed config cleanup. |
 |    |└─ [`system_startup.sh`](../scripts/system_startup.sh) | System startup script for managed config startup. |
 |    |└─ [`system-uninstall.sh`](../scripts/system-uninstall.sh) | Conservative uninstall helper for Meson-installed **Morph** artifacts. |
-| [`sessions/`](../sessions/) | Desktop files for production and development sessions. ||
-|    |└─ [`morph.desktop`](../sessions/morph.desktop) | Production desktop file for login managers. |
+| [`sessions/`](../sessions/) | Desktop files for runtime and development sessions. ||
+|    |└─ [`morph.desktop`](../sessions/morph.desktop) | Runtime desktop file for login managers. |
 |    |└─ [`morph-dev.desktop`](../sessions/morph-dev.desktop) | Development desktop file for local repo testing through a display manager. |
 | [`src/`](../src/) | **Morph** compositor source code. ||
-| [`testing/`](../testing/) | Manual tests, launchers, and sample runtime files. See [`docs/TESTING.md`](TESTING.md). ||
+| [`testing/`](../testing/) | Manual tests, launchers, and dev-only runtime files. See [`docs/TESTING.md`](TESTING.md). ||
+|    |└─ [`config/`](../testing/config/) | Development-only copies used by [`morph_run`](../testing/morph_run) and [`dev-install.sh`](../scripts/dev-install.sh) so the dev flow stays separate from release runtime files. |
+|    |   └─ [`morph.conf`](../testing/config/morph.conf) | Development base config for [`morph_run`](../testing/morph_run) and `dev-install.sh`. |
+|    |   └─ [`environment`](../testing/config/environment) | Development environment file used by [`morph_run`](../testing/morph_run). |
+|    |   └─ [`portals`](../testing/config/portals) | Development managed portal file used by [`morph_run`](../testing/morph_run). |
+|    |   └─ [`startup.sh`](../testing/config/startup.sh) | Development user startup hook template for dev installs. |
+|    |   └─ [`reload.sh`](../testing/config/reload.sh) | Development user reload hook template for dev installs. |
+|    |   └─ [`shutdown.sh`](../testing/config/shutdown.sh) | Development user shutdown hook template for dev installs. |
 |    |└─ [`morph_run`](../testing/morph_run) | **Morph** main development startup script. See [`Wrapper Roles`](LAUNCHER.md#wrapper-roles) in `docs/LAUNCHER.md`. |
 |    |└─ [`test-howto_start-variants.nfo`](../testing/test-howto_start-variants.nfo) | Practical native/nested startup variants and focused launcher checks. |
 |    |└─ [`testplan-manual-morph.nfo`](../testing/testplan-manual-morph.nfo) | Broader manual lifecycle, install, uninstall, hook, and fallback test plan. |
@@ -153,17 +160,17 @@ and then calls the user reload hook."]
 | `[1]` | Installed session entry. Source: [`sessions/morph.desktop`](../sessions/morph.desktop) |
 | `[2]` | Wrapper script. Source: [`scripts/morph-session`](../scripts/morph-session) |
 | `[3]` | Managed startup hook. Source: [`scripts/system_startup.sh`](../scripts/system_startup.sh) |
-| `[4]` | User startup hook template. Source: [`config/startup.sh`](../config/startup.sh) |
+| `[4]` | User startup hook template. Dev source: [`testing/config/startup.sh`](../testing/config/startup.sh); runtime source: [`config/startup.sh`](../config/startup.sh) |
 | `[5]` | Managed reload hook. Source: [`scripts/system_reload.sh`](../scripts/system_reload.sh) |
-| `[6]` | User reload hook template. Source: [`config/reload.sh`](../config/reload.sh) |
-| `[7]` | User shutdown hook template. Source: [`config/shutdown.sh`](../config/shutdown.sh) |
+| `[6]` | User reload hook template. Dev source: [`testing/config/reload.sh`](../testing/config/reload.sh); runtime source: [`config/reload.sh`](../config/reload.sh) |
+| `[7]` | User shutdown hook template. Dev source: [`testing/config/shutdown.sh`](../testing/config/shutdown.sh); runtime source: [`config/shutdown.sh`](../config/shutdown.sh) |
 | `[8]` | Managed shutdown hook. Source: [`scripts/system_shutdown.sh`](../scripts/system_shutdown.sh) |
 
 </details>
 
 ## Wrapper Flow
 
-The wrapper is the ready-made session entrypoint. It turns a display-manager or shell launch into a predictable **Morph** session with layered environment loading, layered config lookup, and managed hook wiring.
+The wrapper is the ready-made session entry point. It turns a display-manager or shell launch into a predictable **Morph** session with layered environment loading, layered config lookup, and managed hook wiring.
 
 ```mermaid
 flowchart TD
@@ -180,7 +187,7 @@ flowchart TD
 ```
 
 - The wrapper exists to keep session setup reproducible.
-- It is the best entrypoint when you want **Morph** to own the full session lifecycle.
+- It is the best entry point when you want **Morph** to own the full session lifecycle.
 - A custom launcher can replace parts of this flow, but then it must deliberately take over those responsibilities.
 
 ## Startup Flow
@@ -204,6 +211,7 @@ flowchart TD
 
 - [`system_startup.sh`](../scripts/system_startup.sh) owns the compositor-side startup preparation.
 - [`config/startup.sh`](../config/startup.sh) stays user-facing and is the place for autostart services, panels, bars, terminals, and similar additions.
+- Path-like hook values from the active config, for example `~/.config/morph/startup.sh` or `${MORPH_SYSTEM_CONFIG_DIR}/startup.sh`, are sourced as files in the managed flow so helper functions stay available.
 - In managed mode, the system hook always runs before the user startup hook.
 
 Read the detailed behavior in [`Startup Hook Resolution`](LAUNCHER.md#startup-hook-resolution) in `docs/LAUNCHER.md`.
@@ -227,6 +235,7 @@ flowchart TD
 
 - This flow is useful for restarting bars, launchers, notification daemons, or other session components without tearing down the full session.
 - The helper layer can also provide guarded commands such as one-shot reload helpers.
+- Path-like reload hook values are sourced as files in the managed flow so reload helpers remain available without re-sourcing the helper library manually.
 
 Read the detailed behavior in [`Reload Resolution`](LAUNCHER.md#reload-resolution) in `docs/LAUNCHER.md`.
 
@@ -250,6 +259,7 @@ flowchart TD
 
 - [`config/shutdown.sh`](../config/shutdown.sh) is the user-facing place for manual cleanup.
 - [`system_shutdown.sh`](../scripts/system_shutdown.sh) owns the managed cleanup and should be the final step so the compositor can clean up the session state it created.
+- Path-like shutdown hook values are sourced as files in the managed flow so user cleanup can log through the shared helper layer directly.
 
 Read the detailed behavior in [`Shutdown Hook Resolution`](LAUNCHER.md#shutdown-hook-resolution) in `docs/LAUNCHER.md`.
 

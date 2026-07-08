@@ -1,4 +1,4 @@
-# Morphs DEV FAQ
+# Morph Dev FAQ
 
 Practical troubleshooting notes for local development and debugging.
 

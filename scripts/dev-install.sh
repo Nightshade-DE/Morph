@@ -86,13 +86,13 @@ install_user_links() {
     mkdir -p "$USER_CONFIG_DIR"
 
     for rel in morph.conf startup.sh reload.sh shutdown.sh environment portals; do
-        link_if_missing "$COMP_ROOT_DIR/config/$rel" "$USER_CONFIG_DIR/$rel"
+        link_if_missing "$COMP_ROOT_DIR/testing/config/$rel" "$USER_CONFIG_DIR/$rel"
     done
 }
 
 uninstall_user_links() {
     for rel in morph.conf startup.sh reload.sh shutdown.sh environment portals; do
-        unlink_if_matches "$COMP_ROOT_DIR/config/$rel" "$USER_CONFIG_DIR/$rel"
+        unlink_if_matches "$COMP_ROOT_DIR/testing/config/$rel" "$USER_CONFIG_DIR/$rel"
     done
 }
 

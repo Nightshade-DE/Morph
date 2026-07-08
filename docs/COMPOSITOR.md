@@ -36,7 +36,7 @@ This keeps this file focused on implemented scope and current architecture while
 
 ## Build & run
 
-`meson setup build && meson compile -C build`. Install with `meson install -C build` (or distro packaging): **`morph`** and **`morph-session`** go to the prefix **`bindir`**, the managed runtime files land under **`sysconfdir/morph`**, and **`sessions/morph.desktop`** is installed as **`share/wayland-sessions/morph.desktop`** so greetd, SDDM, and similar greeters can start the session through the production wrapper.
+Run `meson setup build && meson compile -C build`. Install with `meson install -C build` or your distro package manager. **`morph`** and **`morph-session`** go to the prefix **`bindir`**, the managed runtime files land under **`sysconfdir/morph`**, and **`sessions/morph.desktop`** is installed as **`share/wayland-sessions/morph.desktop`** so display managers such as greetd and SDDM can start the session through the runtime wrapper.
 
 ```bash
 meson setup build && meson compile -C build

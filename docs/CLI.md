@@ -1,7 +1,7 @@
 # Morph CLI Guide
 
 This document collects Morph's command-line interface in one place.
-Use it when you want to start a new compositor instance, forward an action to a running instance, or understand which flags are startup-only versus IPC-oriented.
+Use it when you want to start a new compositor instance, send an action to a running instance, or understand which flags are startup-only versus IPC-oriented.
 
 Primary implementation reference:
 - [`src/main.c:4319`](../src/main.c#L4319)
@@ -25,8 +25,8 @@ Morph has two CLI usage patterns:
 1. Start a new compositor instance
 2. Send a command to an already running compositor through IPC
 
-Some flags always affect the local process startup, for example `--config` or `--log-level`.
-Other flags are IPC-aware and may forward an action to an already running compositor instead of starting a second instance.
+Some flags always affect local process startup, for example `--config` or `--log-level`.
+Other flags are IPC-aware and may send an action to an already running compositor instead of starting a second instance.
 
 ## General Options
 
@@ -34,7 +34,7 @@ Other flags are IPC-aware and may forward an action to an already running compos
 |---|---|---|
 | `-h`, `--help` | Show help and exit | Printed by [`src/main.c:4319`](../src/main.c#L4319) |
 | `-c PATH`, `--config PATH` | Load config from `PATH` | Highest config priority; also documented in [`docs/CONFIG.md`](CONFIG.md) |
-| `--allow-builtin-fallback` | Allow synthesized default binds if no config file resolves | Mirrors [`MORPH_ALLOW_BUILTIN_FALLBACK=1`](ENVIRONMENT.md#morph-allow-builtin-fallback) |
+| `--allow-builtin-fallback` | Allow built-in default binds if no config file resolves | Mirrors [`MORPH_ALLOW_BUILTIN_FALLBACK=1`](ENVIRONMENT.md#morph-allow-builtin-fallback) |
 | `--ipc` | Keep compatibility; IPC is already default-on when `XDG_RUNTIME_DIR` exists | Mostly useful for older scripts |
 | `--no-ipc` | Disable the IPC socket for this instance | Prevents local socket creation |
 

@@ -13,48 +13,48 @@ This roadmap applies to branch `feature/install-and-user-setup`, which starts fr
 
 ## Target State
 
-- [ ] Create a production-ready session startup that is clearer for users than the current developer-heavy flow.
-- [ ] Provide system-wide base configuration under `/etc/morph`.
-- [ ] Layer user configuration under `~/.config/morph` as an override on top of the system base.
-- [ ] Model `startup`, `reload`, and `shutdown` as a clear, robust lifecycle.
-- [ ] Keep the current test and development flow, but separate it cleanly from production session initialization.
+- [x] Create a runtime-ready session startup that is clearer for users than the current developer-heavy flow.
+- [x] Provide system-wide base configuration under `/etc/morph`.
+- [x] Layer user configuration under `~/.config/morph` as an override on top of the system base.
+- [x] Model `startup`, `reload`, and `shutdown` as a clear, robust lifecycle.
+- [x] Keep the current test and development flow, but separate it cleanly from runtime session initialization.
 
 ## Target Paths
 
 ### System-wide
 
-- [ ] `/usr/bin/morph` for the binary.
-- [ ] `/usr/bin/<session-wrapper>` for the production session wrapper.
-- [ ] `/etc/morph/morph.conf` as base configuration.
-- [ ] `/etc/morph/startup.sh` as the base hook for session components and autostarts.
-- [ ] `/etc/morph/reload.sh` for reload-specific coupling.
-- [ ] `/etc/morph/shutdown.sh` for optional system-wide extra shutdown behavior.
-- [ ] `/etc/morph/environment` for system-wide runtime defaults.
-- [ ] `/etc/morph/portals` as a single file for portal handling.
-- [ ] `/usr/share/wayland-sessions/morph.desktop` for display managers.
-- [ ] `/usr/share/doc/morph/` for docs and reference files.
+- [x] `/usr/bin/morph` for the binary.
+- [x] `/usr/bin/<session-wrapper>` for the runtime session wrapper.
+- [x] `/etc/morph/morph.conf` as base configuration.
+- [x] `/etc/morph/startup.sh` as the base hook for session components and autostarts.
+- [x] `/etc/morph/reload.sh` for reload-specific coupling.
+- [x] `/etc/morph/shutdown.sh` for optional system-wide extra shutdown behavior.
+- [x] `/etc/morph/environment` for system-wide runtime defaults.
+- [x] `/etc/morph/portals` as a single file for portal handling.
+- [x] `/usr/share/wayland-sessions/morph.desktop` for display managers.
+- [x] `/usr/share/doc/morph/` for docs and reference files.
 
 ### User-specific
 
-- [ ] `~/.config/morph/morph.conf` as the user override for the base configuration.
-- [ ] `~/.config/morph/startup.sh` for additional user autostarts and session components.
-- [ ] `~/.config/morph/reload.sh` for user reload behavior.
-- [ ] Optional `~/.config/morph/shutdown.sh` for extra user shutdown logic.
-- [ ] Optional `~/.config/morph/environment` for user-specific environment overrides.
+- [x] `~/.config/morph/morph.conf` as the user override for the base configuration.
+- [x] `~/.config/morph/startup.sh` for additional user autostarts and session components.
+- [x] `~/.config/morph/reload.sh` for user reload behavior.
+- [x] Optional `~/.config/morph/shutdown.sh` for extra user shutdown logic.
+- [x] Optional `~/.config/morph/environment` for user-specific environment overrides.
 
 ## Architecture Decisions
 
-- [ ] `/etc/morph` contains the base layer. `~/.config/morph` overrides it selectively.
-- [ ] Portal handling lives in a single file, not in a directory.
-- [ ] `startup.sh` is reduced to a user-facing file that only contains session components and additional autostarts.
-- [ ] Nested/native detection is pulled out of the user hooks.
-- [ ] There are three startup helpers:
-  - [ ] `launch` for regular managed processes.
-  - [ ] `launch_nested` for processes that should only start in nested sessions.
-  - [ ] `launch_nokill` for native system services that are intentionally excluded from shutdown tracking.
-- [ ] `launch_nokill` is not meaningful in nested sessions and must be documented clearly there.
-- [ ] `reload.sh` is treated as a real lifecycle hook instead of a later special case.
-- [ ] Foreign or incompatible hook scripts must not silently break the core flow; instead they need clear error messages and a defined fallback.
+- [x] `/etc/morph` contains the base layer. `~/.config/morph` overrides it selectively.
+- [x] Portal handling lives in a single file, not in a directory.
+- [x] `startup.sh` is reduced to a user-facing file that only contains session components and additional autostarts.
+- [x] Nested/native detection is pulled out of the user hooks.
+- [x] There are three startup helpers:
+  - [x] `launch` for regular managed processes.
+  - [x] `launch_nested` for processes that should only start in nested sessions.
+  - [x] `launch_nokill` for native system services that are intentionally excluded from shutdown tracking.
+- [x] `launch_nokill` is not meaningful in nested sessions and must be documented clearly there.
+- [x] `reload.sh` is treated as a real lifecycle hook instead of a later special case.
+- [x] Foreign or incompatible hook scripts must not silently break the core flow; instead they need clear error messages and a defined fallback.
 
 ## Work Phases
 
@@ -71,12 +71,12 @@ This roadmap applies to branch `feature/install-and-user-setup`, which starts fr
   - [x] Config search paths in `src/config.c`
 - [x] Record hard compatibility boundaries:
   - [x] What stays dev-only?
-  - [x] What becomes production?
+  - [x] What becomes runtime?
   - [x] Which user files must remain stable?
 
 #### Current State
 
-- [x] `testing/morph_run` is currently the central session launcher and mixes production and dev responsibilities.
+- [x] `testing/morph_run` is currently the central session launcher and mixes runtime and dev responsibilities.
 - [x] `config/startup.sh` was not a pure user hook and used to contain session decisions and portal logic directly.
 - [x] `config/shutdown.sh` was tied to the managed `launch` flow and did not yet expose controlled user-hook integration.
 - [x] `config/environment` is still explicitly aligned with the test/launcher flow.
@@ -110,7 +110,7 @@ This roadmap applies to branch `feature/install-and-user-setup`, which starts fr
 #### Compatibility Boundaries
 
 - [x] Dev-only remains everything explicitly described as a test or developer path.
-- [x] Production must include the pieces that initialize a real session and must stay stably reachable for users.
+- [x] Runtime must include the pieces that initialize a real session and must stay stably reachable for users.
 - [x] The main stable user-facing files remain `~/.config/morph/morph.conf`, `startup.sh`, `reload.sh`, and optional `shutdown.sh` and `environment`.
 - [x] `shutdown_list.nfo` remains runtime state, not a user-editable file.
 
@@ -125,8 +125,8 @@ This roadmap applies to branch `feature/install-and-user-setup`, which starts fr
 #### Target Architecture and Ownership
 
 - [x] `/usr/bin/morph` is the installed binary in the target state, not the session wrapper.
-- [x] `/usr/bin/<session-wrapper>` is the production entrypoint for real sessions.
-- [x] The installed session file under `/usr/share/wayland-sessions/` will point to the production wrapper instead of the binary.
+- [x] `/usr/bin/<session-wrapper>` is the runtime entry point for real sessions.
+- [x] The installed session file under `/usr/share/wayland-sessions/` will point to the runtime wrapper instead of the binary.
 - [x] `/etc/morph` is the system-wide base layer.
 - [x] `~/.config/morph` is the user override layer.
 - [x] `/usr/share/doc/morph/` is documentation/reference only.
@@ -142,14 +142,14 @@ This roadmap applies to branch `feature/install-and-user-setup`, which starts fr
 #### Runtime Files vs. Templates vs. Docs
 
 - [x] Live runtime files: `/etc/morph/*`, `~/.config/morph/*`, installed session file.
-- [x] Development/test templates: `testing/morph.conf`, `testing/morph_run`.
+- [x] Development/test templates: `testing/config/*`, `testing/morph_run`.
 - [x] Reference-only files: Markdown docs and example files that are not installed as runtime files.
 
 #### Migration Notes for the Current Workaround
 
 - [x] A local `/usr/bin/morph -> testing/morph_run` link is transitional, not the target state.
-- [x] The new production wrapper must consciously take over this role.
-- [x] Dev install may still offer a quick symlink flow, but it must stay clearly separate from production system install.
+- [x] The new runtime wrapper must consciously take over this role.
+- [x] Dev install may still offer a quick symlink flow, but it must stay clearly separate from runtime system install.
 
 ### 3. Simplify the Startup Flow
 
@@ -190,7 +190,7 @@ This roadmap applies to branch `feature/install-and-user-setup`, which starts fr
 #### Behavior in Nested and Native
 
 - [x] In native sessions, `launch` starts managed components, `launch_nested` logs a skip, and `launch_nokill` starts explicitly unmanaged processes.
-- [x] In nested sessions, `launch` remains usable for nested-safe processes, `launch_nested` is the preferred nested entrypoint, and `launch_nokill` should not be used.
+- [x] In nested sessions, `launch` remains usable for nested-safe processes, `launch_nested` is the preferred nested entry point, and `launch_nokill` should not be used.
 - [x] Users no longer need their own `if [ "$WLR_BACKENDS" = ... ]` blocks for this split.
 
 #### Example Hook Shape in the Target State
@@ -232,11 +232,11 @@ This roadmap applies to branch `feature/install-and-user-setup`, which starts fr
 - [x] Integrate `reload.sh` into the lifecycle.
 - [x] Define when `reload` is needed instead of a normal restart.
 - [x] Separate a managed core reload from optional user reload behavior.
-- [ ] Record examples of reload-relevant components:
+- [ ] Record examples of reload-relevant components (the remaining non-panel example is deferred until a concrete case exists):
   - [x] panels such as `sfwbar` or `waybar`
   - [ ] other session components with their own reinitialization needs
 
-- [x] Reload stays bound to the existing IPC/CLI entrypoint:
+- [x] Reload stays bound to the existing IPC/CLI entry point:
   - [x] `reload config` / `reload` inside the running compositor
   - [x] `morph --reload-config` as the CLI frontend to that path
 - [x] The managed reload flow now uses `scripts/system_reload.sh`.
@@ -267,29 +267,24 @@ This roadmap applies to branch `feature/install-and-user-setup`, which starts fr
 
 ### 8. Installation Strategy
 
-- [ ] Create a dedicated dev install script.
-- [ ] Plan dev install symlinks into `~/.config/morph`.
-- [ ] Provide clear `sudo` output/help for dev install of the session desktop file.
-- [ ] Provide the binary and session wrapper under stable paths for user scripts.
-- [ ] Define system install cleanly via Meson and/or a separate install script.
-- [ ] Plan uninstall strategy from the start:
-  - [x] dev uninstall for created symlinks and locally installed helpers
-  - [x] system uninstall for installed files under `/usr/bin`, `/etc/morph`, `/usr/share/wayland-sessions`, and `/usr/share/doc/morph`
-  - [x] never remove real user files automatically; only revert install-created symlinks or generated files
 - [x] Create a dedicated dev install script.
 - [x] Plan dev install symlinks into `~/.config/morph`.
 - [x] Provide clear `sudo` output/help for dev install of the session desktop file.
 - [x] Provide the binary and session wrapper under stable paths for user scripts.
 - [x] Define system install cleanly via Meson and/or a separate install script.
-- [x] Ensure `testing/*` is never installed as production runtime.
+- [x] Plan uninstall strategy from the start:
+  - [x] dev uninstall for created symlinks and locally installed helpers
+  - [x] system uninstall for installed files under `/usr/bin`, `/etc/morph`, `/usr/share/wayland-sessions`, and `/usr/share/doc/morph`
+  - [x] never remove real user files automatically; only revert install-created symlinks or generated files
+- [x] Ensure `testing/*` is never installed as runtime.
 
 ### 9. Meson and Packaging Adjustments
 
 - [x] Add install targets for `/etc/morph/*`.
 - [x] Add an install target for the session wrapper.
-- [x] Wire the session desktop file cleanly to the production entrypoint.
+- [x] Wire the session desktop file cleanly to the runtime entry point.
 - [x] Install docs and reference files into `/usr/share/doc/morph/`.
-- [ ] Separate which files are templates and which are real runtime files.
+- [x] Separate which files are templates and which are real runtime files.
 - [x] Document and, where useful, automate a clean uninstall path for system and dev installs.
 
 ### 10. Tests
@@ -307,8 +302,8 @@ This roadmap applies to branch `feature/install-and-user-setup`, which starts fr
 
 #### Manual
 
-- [ ] Test native sessions through the production wrapper.
-- [ ] Test nested sessions through the production wrapper.
+- [ ] Test native sessions through the runtime wrapper.
+- [ ] Test nested sessions through the runtime wrapper.
 - [ ] Test display-manager startup through the `.desktop` file.
 - [ ] Test user overrides against `/etc/morph/morph.conf`.
 - [ ] Test `launch_nested` behavior in a real nested session.
@@ -318,8 +313,8 @@ This roadmap applies to branch `feature/install-and-user-setup`, which starts fr
 
 ## Open Design Questions
 
-- [x] Only prepare the final production wrapper name in this branch; handle the actual rename to `morph` later.
-  - [x] The production binary, session wrapper, desktop files, config paths, and user-facing [`MORPH_*`](docs/ENVIRONMENT.md#launcher-variables) variables now use the `morph` name.
+- [x] Only prepare the final runtime wrapper name in this branch; handle the actual rename to `morph` later.
+  - [x] The runtime binary, session wrapper, desktop files, config paths, and user-facing [`MORPH_*`](docs/ENVIRONMENT.md#launcher-variables) variables now use the `morph` name.
 - [x] Decide whether `config` and `environment` resolution stays purely in shell/wrapper logic or moves partially into the binary.
   - [x] `morph.conf` and its default search paths stay in the binary because the config is the compositor-facing interface.
   - [x] `environment` files and their priority chain stay in the wrapper/shell layer because they belong to session orchestration and runtime variable setup.
@@ -332,9 +327,9 @@ This roadmap applies to branch `feature/install-and-user-setup`, which starts fr
 ## Definition of Done per Work Package
 
 - [ ] Implementation is functionally complete.
-- [ ] Automated tests run where relevant.
+- [x] Automated tests run where relevant.
 - [ ] Manual tests are documented and, where needed, confirmed by you.
 - [ ] New or changed functions, structs, and important data flows are documented.
 - [ ] Important places have short, meaningful inline comments.
-- [ ] Affected Markdown documentation is updated.
+- [x] Affected Markdown documentation is updated.
 - [ ] A commit message with 2-5 useful bullet points is prepared, but not executed yet.

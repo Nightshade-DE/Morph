@@ -20,7 +20,7 @@ If [`MORPH_ENV_FILE`](#morph-env-file) is set, it replaces the wrapper's system 
 
 Default system environment files differ by wrapper:
 
-- [`testing/morph_run`](../testing/morph_run) uses the repository-local [`config/environment`](../config/environment)
+- [`testing/morph_run`](../testing/morph_run) uses the repository-local [`testing/config/environment`](../testing/config/environment)
 - [`morph-session`](../scripts/morph-session) uses `/etc/morph/environment` by default; repo source: [`config/environment`](../config/environment)
 
 <a id="launcher-variables"></a>
@@ -29,12 +29,12 @@ Default system environment files differ by wrapper:
 <a id="morph-dbg"></a>
 ### MORPH_DBG
 
-Controls launcher runtime mode:
+Controls how the launcher behaves:
 
-- 0: release mode
+- 0: normal mode
   - --log-level error
   - --no-crash-handler
-- 1: release-debug mode
+- 1: normal mode with info logging
   - --log-level info
   - crash handler remains off
 - 2: debug mode
@@ -57,7 +57,7 @@ Optional alternate config file path passed through `-c` or the environment varia
 Optional compatibility switch for config resolution.
 
 - unset or `0`: missing config is a hard error
-- `1` / `true` / `yes` / `on`: allow synthesized builtin binds when no config file resolves
+- `1` / `true` / `yes` / `on`: allow built-in default binds when no config file resolves
 
 This mirrors the binary CLI flag `--allow-builtin-fallback`.
 
@@ -77,7 +77,7 @@ If unset, launcher applies session-aware defaults:
 <a id="morph-x11-display"></a>
 ### MORPH_X11_DISPLAY
 
-Optional forced display number for satellite, for example :12.
+Optional display number override for the satellite, for example `:12`.
 
 <a id="morph-log-dir"></a>
 ### MORPH_LOG_DIR
@@ -103,7 +103,7 @@ If set and readable, it is sourced before launcher defaults are applied.
 <a id="morph-debug-xdg"></a>
 ### MORPH_DEBUG_XDG
 
-Optional verbose XDG lifecycle debug flag forwarded to **Morph**.
+Optional verbose XDG lifecycle debug flag passed to **Morph**.
 
 - unset or `0`: disabled
 - non-empty and not `0`: enabled
@@ -159,7 +159,7 @@ This is often useful for X11 applications started through Xwayland, for example 
 ## XKB Variables
 
 These variables are read by **Morph** keyboard initialization via getenv().
-The launcher does not parse them; it only sources [`config/environment`](../config/environment).
+The development launcher does not parse them; it only sources [`testing/config/environment`](../testing/config/environment).
 
 - XKB_DEFAULT_LAYOUT
 - XKB_DEFAULT_MODEL
@@ -168,7 +168,7 @@ The launcher does not parse them; it only sources [`config/environment`](../conf
 
 Behavior:
 
-- unset/empty values are passed as NULL-equivalent to libxkbcommon system defaults
+- unset or empty values let libxkbcommon use its system defaults
 - set values are forwarded to xkb_rule_names and used for keymap compile
 
 Example:
@@ -179,7 +179,7 @@ XKB_DEFAULT_OPTIONS=grp:alt_shift_toggle \
 ./testing/morph_run
 ```
 
-The same variables also work through the installed production wrapper:
+The same variables also work through the installed runtime wrapper:
 
 ```bash
 XKB_DEFAULT_LAYOUT=de,us morph-session
@@ -187,14 +187,14 @@ XKB_DEFAULT_LAYOUT=de,us morph-session
 
 ## Practical Keyboard Test
 
-sfwbar is not a good target for keyboard layout validation.
-Use a text editor client such as geany, mousepad, or another editor inside the compositor session.
+sfwbar is not a good choice for keyboard layout validation.
+Use a text editor such as Geany, Mousepad, or another editor inside the compositor session.
 
 Suggested check:
 
-1. Start with XKB vars set.
-2. Open geany (or another editor) and type text.
-3. Switch layout (for example Alt+Shift when configured in options).
+1. Start with the XKB variables set.
+2. Open Geany, Mousepad, or another editor and type text.
+3. Switch layout, for example with `Alt+Shift` when it is configured.
 4. Verify that character output changes as expected.
 
 ## Related Docs

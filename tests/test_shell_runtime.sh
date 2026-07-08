@@ -369,6 +369,53 @@ test_system_startup_runs_user_hook_command() {
     trap - EXIT HUP INT TERM
 }
 
+test_system_startup_runs_variable_based_user_hook_file() {
+    tmpdir=$(make_tmpdir)
+    trap 'rm -rf "$tmpdir"' EXIT HUP INT TERM
+
+    mkdir -p "$tmpdir/system-config" "$tmpdir/bin"
+    cat > "$tmpdir/system-config/startup.sh" <<'EOF'
+#!/bin/sh
+launch "$HOOK_SERVICE"
+log_startup INFO "Variable-based startup hook ran."
+EOF
+    cat > "$tmpdir/bin/stdbuf" <<'EOF'
+#!/bin/sh
+shift 2
+"$@"
+EOF
+    cat > "$tmpdir/bin/hook-service" <<'EOF'
+#!/bin/sh
+printf 'hook service output\n'
+EOF
+    chmod +x "$tmpdir/system-config/startup.sh" "$tmpdir/bin/stdbuf" "$tmpdir/bin/hook-service"
+
+    export PATH="$tmpdir/bin:$PATH"
+    export COMP_ROOT_DIR="$repo_root"
+    export MORPH_HELPER_LIB="$repo_root/scripts/shell-helpers.sh"
+    export MORPH_STARTUP_LOG_FILE="$tmpdir/startup.log"
+    export MORPH_SHUTDOWN_LIST="$tmpdir/shutdown_list.nfo"
+    export MORPH_SYSTEM_CONFIG_DIR="$tmpdir/system-config"
+    export MORPH_USER_STARTUP_HOOK_CMD='${MORPH_SYSTEM_CONFIG_DIR}/startup.sh'
+    export HOOK_SERVICE="$tmpdir/bin/hook-service"
+    export XDG_CONFIG_HOME="$tmpdir/xdg-config"
+    export MORPH_SESSION_MODE=nested
+    export WLR_WL_SOCKET="wayland-test-socket"
+    : > "$MORPH_STARTUP_LOG_FILE"
+    : > "$MORPH_SHUTDOWN_LIST"
+
+    # shellcheck disable=SC1090
+    . "$repo_root/scripts/system_startup.sh"
+
+    count=$(grep -c '^hook-service$' "$MORPH_SHUTDOWN_LIST" || true)
+    assert_equals "1" "$count" "variable-based startup hook shutdown tracker count"
+    assert_file_contains "$MORPH_STARTUP_LOG_FILE" "Sourcing user startup hook file from config: $tmpdir/system-config/startup.sh"
+    assert_file_contains "$MORPH_STARTUP_LOG_FILE" "Variable-based startup hook ran."
+
+    rm -rf "$tmpdir"
+    trap - EXIT HUP INT TERM
+}
+
 test_morph_config_hook_from_file_reads_hooks_section() {
     tmpdir=$(make_tmpdir)
     trap 'rm -rf "$tmpdir"' EXIT HUP INT TERM
@@ -665,7 +712,7 @@ test_meson_install_manifest_lists_runtime_artifacts() {
     assert_file_contains "$manifest" "/usr/local/etc/morph/morph.conf"
     assert_file_contains "$manifest" "/usr/local/etc/morph/system_startup.sh"
     assert_file_contains "$manifest" "/usr/local/share/wayland-sessions/morph.desktop"
-    assert_file_contains "$manifest" "/usr/local/share/doc/morph/docs/CONFIG.md"
+    assert_file_contains "$manifest" "/usr/local/share/doc/morph/CONFIG.md"
 
     rm -rf "$tmpdir"
     trap - EXIT HUP INT TERM
@@ -695,6 +742,7 @@ test_system_startup_nested_sets_wayland_display
 test_system_reload_runs_user_hook_file_with_helpers
 test_system_startup_native_runs_managed_portals
 test_system_startup_runs_user_hook_command
+test_system_startup_runs_variable_based_user_hook_file
 test_morph_config_hook_from_file_reads_hooks_section
 test_portals_log_effective_runtime_values
 test_system_shutdown_cleans_registered_processes

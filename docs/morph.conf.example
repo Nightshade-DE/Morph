@@ -12,14 +12,21 @@
 # ----------------------------------------------------------------------------
 # Lifecycle hooks
 # ----------------------------------------------------------------------------
-# A single [hooks] block may define shell snippets for startup, reload, and shutdown.
-# Each value runs under /bin/sh -c. Treat these commands as trusted code.
+# A single [hooks] block may define startup, reload, and shutdown hooks.
+# Path-like values such as ~/.config/morph/startup.sh or
+# ${MORPH_SYSTEM_CONFIG_DIR}/startup.sh are sourced as hook files so managed
+# helpers such as launch() and reload() stay available inside the hook.
+# Values that contain shell control syntax still run under /bin/sh -c.
+# Treat both forms as trusted code.
 # In the managed session flow, startup and reload pass through Morph's system hooks first.
 # Shutdown runs your user hook before the managed cleanup hook.
 #
 # [hooks]
+# startup = ~/.config/morph/startup.sh
 # startup = waybar &
+# shutdown = ~/.config/morph/shutdown.sh
 # shutdown = pkill -x waybar 2>/dev/null || true
+# reload = ~/.config/morph/reload.sh
 # reload = pkill -USR1 waybar 2>/dev/null || true
 
 # ----------------------------------------------------------------------------
@@ -286,13 +293,3 @@ action = quit
 # match = ^HUION .*
 # output = DP-2
 # type = tablet
-
-# ----------------------------------------------------------------------------
-# Legacy compatibility
-# ----------------------------------------------------------------------------
-# [pointer] is only kept for backward compatibility.
-# Morph accepts resize_border_px= or resize_border= so older configs do not fail to load,
-# but the compositor now uses a fixed minimal outside edge zone instead.
-#
-# [pointer]
-# resize_border_px = 8
