@@ -1,6 +1,5 @@
 [Desktop Entry]
 Type=Application
-# Freedesktop Wayland session (install to share/wayland-sessions for greetd, SDDM, etc.)
 Name=Morph
 Comment=Stacking, tiling, and scroll layouts (wlroots Wayland compositor)
 Exec=morph-session

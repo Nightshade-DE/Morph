@@ -1,8 +1,8 @@
 # Morph runtime environment defaults
-# This file is sourced by testing/morph_run and morph-session.
+# This file is sourced by testing/morph-session_dbg and morph-session.
 #
 # Keep values commented unless you want to override launcher defaults.
-# Effective defaults live in testing/morph_run.
+# Effective defaults live in testing/morph-session_dbg.
 #
 # Modes:
 #   MORPH_DBG=0 -> normal release run (error-level logging, crash handler off)
@@ -25,6 +25,12 @@ MORPH_DEBUG_XDG=0
 # wlroots/log verbosity helpers
 WAYLAND_DEBUG=0
 WLR_LOGTS=0
+
+# Local wlroots runtime fallback (for systems without distro wlroots-0.19).
+# Prefer system runtime libraries when available.
+# Uncomment when morph-session runs from a display manager and cannot resolve
+# libwlroots-0.19.so without shell-provided LD_LIBRARY_PATH.
+#LD_LIBRARY_PATH="$HOME/.local/lib/x86_64-linux-gnu:$HOME/.local/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
 # Java/X11 compatibility helpers
 _JAVA_AWT_WM_NONREPARENTING=1

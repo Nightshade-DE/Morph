@@ -14,9 +14,9 @@ Key paths
 ---------
 Project root:   <your_local_repo>/morph
 Binary:         <your_local_repo>/morph/build/morph
-Dev launcher:   <your_local_repo>/morph/testing/morph_run
+Dev launcher:   <your_local_repo>/morph/testing/morph-session_dbg
 Runtime wrapper: morph-session
-Dev wrapper:    /usr/local/bin/morph-dev-session
+Dev wrapper:    /usr/local/bin/morph-session_dbg
 Default config: <your_local_repo>/morph/testing/config/morph.conf
 User config:    ~/.config/morph/morph.conf
 System config:  /etc/morph/morph.conf
@@ -50,7 +50,7 @@ Expected:
 ----------------------------------------
 Use this to validate priority handling without starting a full session:
 
-  MORPH_RESOLVE_ONLY=1 ./testing/morph_run
+  MORPH_RESOLVE_ONLY=1 ./testing/morph-session_dbg
 
 Filter:
   rg -n "Runtime summary|Environment source|Config file path|Managed hook directory|Managed config directory|Compositor binary|Builtin fallback enabled" "$LOG_BASE"/morph-startup.log
@@ -66,7 +66,7 @@ Expected:
 --------------------------------------
 Run from a VT/TTY or native compositor test environment:
 
-  ./testing/morph_run
+  ./testing/morph-session_dbg
 
 Filter:
   rg -n "Selected session mode|Native Wayland mode detected|Loaded managed portals file|Started xdg-desktop-portal|Set portal variables|Startup hook completed|Compositor exited" "$LOG_BASE"/morph-startup.log
@@ -81,7 +81,7 @@ Expected:
 --------------------------------------
 Run inside an existing X11 or Wayland desktop session:
 
-  ./testing/morph_run
+  ./testing/morph-session_dbg
 
 Filter:
   rg -n "Selected session mode|Nested mode detected|Nested clients use WAYLAND_DISPLAY|Skipping .*launch_nested|Compositor exited" "$LOG_BASE"/morph-nested-startup.log
@@ -145,11 +145,11 @@ Expected:
 ------------------
 Explicit override:
 
-  MORPH_CONFIG=/path/to/other.conf MORPH_RESOLVE_ONLY=1 ./testing/morph_run
+  MORPH_CONFIG=/path/to/other.conf MORPH_RESOLVE_ONLY=1 ./testing/morph-session_dbg
 
 Builtin fallback opt-in:
 
-  MORPH_ALLOW_BUILTIN_FALLBACK=1 MORPH_RESOLVE_ONLY=1 ./testing/morph_run
+  MORPH_ALLOW_BUILTIN_FALLBACK=1 MORPH_RESOLVE_ONLY=1 ./testing/morph-session_dbg
 
 Filter:
   rg -n "Config file path:|override from MORPH_CONFIG|user config fallback|system config fallback|builtin fallback" "$LOG_BASE"/morph-startup.log
@@ -164,7 +164,7 @@ Expected:
 -----------------------
 Caller override example:
 
-  MORPH_DBG=2 MORPH_RESOLVE_ONLY=1 ./testing/morph_run
+  MORPH_DBG=2 MORPH_RESOLVE_ONLY=1 ./testing/morph-session_dbg
 
 Filter:
   rg -n "Environment source|MORPH_DBG:|MORPH_X11:|MORPH_X11_DISPLAY:|MORPH_LOG_LEVEL:|Crash handler enabled:" "$LOG_BASE"/morph-startup.log
@@ -219,11 +219,11 @@ Expected:
 -------------------------
 Inspect session entries:
 
-  grep -nE '^(Name|Exec|TryExec)=' sessions/morph.desktop sessions/morph-dev.desktop
+  grep -nE '^(Name|Exec|TryExec)=' sessions/morph.desktop sessions/morph_dbg.desktop
 
 Expected:
 - `sessions/morph.desktop` uses `morph-session`
-- `sessions/morph-dev.desktop` uses `/usr/local/bin/morph-dev-session`
+- `sessions/morph_dbg.desktop` uses `/usr/local/bin/morph-session_dbg`
 
 
 12) Crash/error path
@@ -262,8 +262,8 @@ Manual sign-off
 ---------------
 Mark these after you have verified them yourself:
 
-- [ ] Native session through `./testing/morph_run`
-- [ ] Nested session through `./testing/morph_run`
+- [ ] Native session through `./testing/morph-session_dbg`
+- [ ] Nested session through `./testing/morph-session_dbg`
 - [ ] Managed portal startup ordering
 - [ ] Managed shutdown ordering
 - [ ] Reload hook flow

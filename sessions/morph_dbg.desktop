@@ -1,9 +1,8 @@
 [Desktop Entry]
 Type=Application
-# Development Wayland session entry for local repo testing through a display manager.
 Name=Morph (Dev)
 Comment=Repository-backed Morph session for local launcher testing
-Exec=/usr/local/bin/morph-dev-session
-TryExec=/usr/local/bin/morph-dev-session
+Exec=/usr/bin/morph-session_dbg
+TryExec=/usr/bin/morph-session_dbg
 DesktopNames=Morph
 Keywords=wm;wayland;compositor;wlroots;dev;

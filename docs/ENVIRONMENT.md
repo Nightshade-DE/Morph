@@ -11,7 +11,7 @@ Launcher runtime flow and files are documented in [`docs/LAUNCHER.md`](LAUNCHER.
 
 Launcher settings are resolved in this order:
 
-1. Caller environment (for example `VAR=value ./testing/morph_run` or `VAR=value morph-session`)
+1. Caller environment (for example `VAR=value ./testing/morph-session_dbg` or `VAR=value morph-session`)
 2. User environment file (`$XDG_CONFIG_HOME/morph/environment` or `~/.config/morph/environment`)
 3. System environment file (`$MORPH_SYSTEM_CONFIG_DIR/environment`)
 4. Wrapper defaults
@@ -20,7 +20,7 @@ If [`MORPH_ENV_FILE`](#morph-env-file) is set, it replaces the wrapper's system 
 
 Default system environment files differ by wrapper:
 
-- [`testing/morph_run`](../testing/morph_run) uses the repository-local [`testing/config/environment`](../testing/config/environment)
+- [`testing/morph-session_dbg`](../testing/morph-session_dbg) uses the repository-local [`testing/config/environment`](../testing/config/environment)
 - [`morph-session`](../scripts/morph-session) uses `/etc/morph/environment` by default; repo source: [`config/environment`](../config/environment)
 
 <a id="launcher-variables"></a>
@@ -100,6 +100,29 @@ Note:
 Optional path to an environment override file.
 If set and readable, it is sourced before launcher defaults are applied.
 
+<a id="ld-library-path"></a>
+### LD_LIBRARY_PATH
+
+Optional dynamic linker search path used by runtime loader resolution.
+
+Use this only when Morph depends on locally installed shared libraries
+(for example a locally built `wlroots-0.19`) that are not available through
+system runtime library paths.
+
+Recommended setup:
+
+- uncomment the `LD_LIBRARY_PATH` block in `/etc/morph/environment`
+- or uncomment the same block in `~/.config/morph/environment`
+
+Runtime behavior in `morph-session`:
+
+- when `LD_LIBRARY_PATH` is already set, the wrapper keeps it unchanged
+- when `LD_LIBRARY_PATH` is empty and local library directories exist,
+  the wrapper sets it automatically as a fallback and writes a warning
+  to the startup log
+- the warning points to the commented `LD_LIBRARY_PATH` block in the
+  environment files above for explicit configuration
+
 <a id="morph-debug-xdg"></a>
 ### MORPH_DEBUG_XDG
 
@@ -118,7 +141,7 @@ Internal wrapper flag for managed session dispatch.
 - unset: the compositor runs configured hooks directly
 - `1`: the compositor dispatches [`system_startup.sh`](../scripts/system_startup.sh), [`system_reload.sh`](../scripts/system_reload.sh), and [`system_shutdown.sh`](../scripts/system_shutdown.sh) first
 
-This variable is exported by [`testing/morph_run`](../testing/morph_run) and [`morph-session`](../scripts/morph-session).
+This variable is exported by [`testing/morph-session_dbg`](../testing/morph-session_dbg) and [`morph-session`](../scripts/morph-session).
 Normally users do not need to set it manually.
 
 <a id="morph-layout"></a>
@@ -176,7 +199,7 @@ Example:
 ```bash
 XKB_DEFAULT_LAYOUT=de,us \
 XKB_DEFAULT_OPTIONS=grp:alt_shift_toggle \
-./testing/morph_run
+./testing/morph-session_dbg
 ```
 
 The same variables also work through the installed runtime wrapper:

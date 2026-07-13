@@ -62,7 +62,7 @@ This roadmap applies to branch `feature/install-and-user-setup`, which starts fr
 
 - [x] Create branch `feature/install-and-user-setup` from `33e99c9`.
 - [x] Document the current relevant files and code paths:
-  - [x] `testing/morph_run`
+  - [x] `testing/morph-session_dbg`
   - [x] `config/startup.sh`
   - [x] `config/shutdown.sh`
   - [x] `config/environment`
@@ -76,12 +76,12 @@ This roadmap applies to branch `feature/install-and-user-setup`, which starts fr
 
 #### Current State
 
-- [x] `testing/morph_run` is currently the central session launcher and mixes runtime and dev responsibilities.
+- [x] `testing/morph-session_dbg` is currently the central session launcher and mixes runtime and dev responsibilities.
 - [x] `config/startup.sh` was not a pure user hook and used to contain session decisions and portal logic directly.
 - [x] `config/shutdown.sh` was tied to the managed `launch` flow and did not yet expose controlled user-hook integration.
 - [x] `config/environment` is still explicitly aligned with the test/launcher flow.
 - [x] `sessions/morph.desktop` still starts the binary directly instead of a wrapper.
-- [x] A local `/usr/bin/morph -> testing/morph_run` workaround may already exist and must be treated as transitional.
+- [x] A local `/usr/bin/morph -> testing/morph-session_dbg` workaround may already exist and must be treated as transitional.
 - [x] `meson.build` still installs only the binary, the config test, and the session desktop file.
 - [x] The binary config search logic still does not know `/etc/morph/morph.conf`.
 
@@ -95,7 +95,7 @@ This roadmap applies to branch `feature/install-and-user-setup`, which starts fr
   - [x] `config/shutdown.sh` is the optional user shutdown hook
   - [x] `scripts/system_shutdown.sh` is the managed cleanup runtime that must still run after the user hook
 - [x] The current dev flow now uses managed hook dispatch instead of direct user-hook execution:
-  - [x] `testing/morph_run` exports [`MORPH_MANAGED_HOOKS=1`](docs/ENVIRONMENT.md#morph-managed-hooks)
+  - [x] `testing/morph-session_dbg` exports [`MORPH_MANAGED_HOOKS=1`](docs/ENVIRONMENT.md#morph-managed-hooks)
   - [x] the binary then dispatches `scripts/system_startup.sh` and `scripts/system_shutdown.sh`
   - [x] configured user hooks remain in the config and are only run from the managed runtime in the intended order
 - [x] Portal handling is now encapsulated as its own managed runtime building block:
@@ -120,7 +120,7 @@ This roadmap applies to branch `feature/install-and-user-setup`, which starts fr
 - [x] Define ownership for `config`, hooks, `environment`, `portals`, docs, and the session file.
 - [x] Define override rules between `/etc/morph` and `~/.config/morph`.
 - [x] Separate runtime files from templates and pure documentation.
-- [x] Account for the current `/usr/bin/morph -> testing/morph_run` workaround as a migration case.
+- [x] Account for the current `/usr/bin/morph -> testing/morph-session_dbg` workaround as a migration case.
 
 #### Target Architecture and Ownership
 
@@ -142,12 +142,12 @@ This roadmap applies to branch `feature/install-and-user-setup`, which starts fr
 #### Runtime Files vs. Templates vs. Docs
 
 - [x] Live runtime files: `/etc/morph/*`, `~/.config/morph/*`, installed session file.
-- [x] Development/test templates: `testing/config/*`, `testing/morph_run`.
+- [x] Development/test templates: `testing/config/*`, `testing/morph-session_dbg`.
 - [x] Reference-only files: Markdown docs and example files that are not installed as runtime files.
 
 #### Migration Notes for the Current Workaround
 
-- [x] A local `/usr/bin/morph -> testing/morph_run` link is transitional, not the target state.
+- [x] A local `/usr/bin/morph -> testing/morph-session_dbg` link is transitional, not the target state.
 - [x] The new runtime wrapper must consciously take over this role.
 - [x] Dev install may still offer a quick symlink flow, but it must stay clearly separate from runtime system install.
 
@@ -207,7 +207,7 @@ This roadmap applies to branch `feature/install-and-user-setup`, which starts fr
 - [x] Remove direct nested/native branching, embedded portal handling, and the implicit mix of runtime core and user content from `config/startup.sh`.
 - [x] Runtime preparation now lives before user content in a separate file: `scripts/system_startup.sh`, which then starts the user hook.
 - [x] The current dev flow now has three separated layers:
-  - [x] `testing/morph_run` as launcher and runtime frame
+  - [x] `testing/morph-session_dbg` as launcher and runtime frame
   - [x] `scripts/system_startup.sh` as managed startup preparation
   - [x] `config/startup.sh` as the slim user hook for session components
 

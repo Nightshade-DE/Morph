@@ -6,6 +6,8 @@ project(
     'c_std=c11',
     'warning_level=2',
     'werror=false',
+    'prefix=/usr',
+    'sysconfdir=/etc',
   ],
 )
 
@@ -25,6 +27,10 @@ sh_prog = find_program('sh')
 
 morph_runtime_dir = get_option('sysconfdir') / 'morph'
 morph_doc_dir = get_option('datadir') / 'doc' / 'morph'
+morph_bindir = '/usr/bin'
+morph_runtime_dir = '/etc/morph'
+morph_sessions_dir = '/usr/share/wayland-sessions'
+morph_doc_dir = '/usr/share/doc/morph'
 
 xdg_shell_xml = wayland_protocols.get_variable('pkgdatadir') / 'stable/xdg-shell/xdg-shell.xml'
 xdg_shell_server_h = custom_target(
@@ -93,6 +99,7 @@ executable(
   pointer_constraints_server_h,
   dependencies: [wlroots, pixman, wayland_server, xkbcommon, m_dep],
   install: true,
+  install_dir: morph_bindir,
 )
 
 config_test = executable(
@@ -136,14 +143,14 @@ install_data(
 
 install_data(
   files('scripts/morph-session'),
-  install_dir: get_option('bindir'),
+  install_dir: morph_bindir,
   rename: 'morph-session',
   install_mode: 'rwxr-xr-x',
 )
 
 install_data(
   files('sessions/morph.desktop'),
-  install_dir: get_option('datadir') / 'wayland-sessions',
+  install_dir: morph_sessions_dir,
 )
 
 install_data(

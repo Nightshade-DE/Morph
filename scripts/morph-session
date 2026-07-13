@@ -8,7 +8,7 @@
 MORPH_SYSTEM_HOOK_DIR_DEFAULT="/etc/morph"
 MORPH_SYSTEM_CONFIG_DIR_DEFAULT="/etc/morph"
 MORPH_SYSTEM_CONFIG_FILE_DEFAULT="/etc/morph/morph.conf"
-MORPH_BIN_DEFAULT="morph"
+MORPH_BIN_DEFAULT="/usr/bin/morph"
 
 # Capture one caller-provided value so sourced environment files cannot silently
 # override the highest-priority layer.
@@ -27,7 +27,7 @@ morph_restore_caller_override() {
     var_name="$1"
     if eval "[ \"\${MORPH_CALLER_HAS_$var_name:-0}\" = 1 ]"; then
         eval "$var_name=\${MORPH_CALLER_VALUE_$var_name}"
-        export "$var_name"
+        export "${var_name?}"
     fi
 }
 
@@ -51,13 +51,13 @@ SYSTEM_ENV_FILE="${MORPH_ENV_FILE:-$SYSTEM_ENV_FILE_DEFAULT}"
 USER_ENV_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/morph/environment"
 ENV_FILE_NOTE="defaults-only (no user or system environment file found)"
 
-if [ -f "$SYSTEM_ENV_FILE" ]; then
-    . "$SYSTEM_ENV_FILE"
+if [ -f "${SYSTEM_ENV_FILE}" ]; then
+    . "${SYSTEM_ENV_FILE?}"
     ENV_FILE_NOTE="loaded system environment: $SYSTEM_ENV_FILE"
 fi
 
-if [ -f "$USER_ENV_FILE" ]; then
-    . "$USER_ENV_FILE"
+if [ -f "${USER_ENV_FILE}" ]; then
+    . "${USER_ENV_FILE?}"
     if [ "$ENV_FILE_NOTE" = "defaults-only (no user or system environment file found)" ]; then
         ENV_FILE_NOTE="loaded user environment: $USER_ENV_FILE"
     else
@@ -74,6 +74,26 @@ for var_name in \
 do
     morph_restore_caller_override "$var_name"
 done
+
+MORPH_LD_LIBRARY_PATH_NOTE=""
+if [ -z "${LD_LIBRARY_PATH:-}" ]; then
+    local_lib_paths=""
+    for candidate in "$HOME/.local/lib/x86_64-linux-gnu" "$HOME/.local/lib"; do
+        if [ -d "$candidate" ]; then
+            if [ -z "$local_lib_paths" ]; then
+                local_lib_paths="$candidate"
+            else
+                local_lib_paths="$local_lib_paths:$candidate"
+            fi
+        fi
+    done
+
+    if [ -n "$local_lib_paths" ]; then
+        LD_LIBRARY_PATH="$local_lib_paths"
+        export LD_LIBRARY_PATH
+        MORPH_LD_LIBRARY_PATH_NOTE="LD_LIBRARY_PATH was empty and was auto-set to '$LD_LIBRARY_PATH' for local wlroots runtime lookup. Prefer system wlroots runtime packages when available. For an explicit setup, uncomment the LD_LIBRARY_PATH block in /etc/morph/environment or ~/.config/morph/environment."
+    fi
+fi
 
 # Launcher defaults (single source of truth for release behavior).
 WAYLAND_DEBUG_DEFAULT=0
@@ -133,7 +153,7 @@ if [ -n "${MORPH_DEBUG_XDG+x}" ]; then export MORPH_DEBUG_XDG; fi
 
 # Load shared helper functions before first use.
 # ==============================================================================
-. "$MORPH_HELPER_LIB"
+. "${MORPH_HELPER_LIB?}"
 
 
 # Path Definitions and Log Setup
@@ -311,6 +331,9 @@ export CURRENT_LOG_FILE="$MORPH_STARTUP_LOG_FILE"
 STARTUP_LOG_BASELINE=$(line_count_or_zero "$MORPH_STARTUP_LOG_FILE")
 CORE_LOG_BASELINE=$(line_count_or_zero "$LOG_FILE")
 CRASH_LOG_BASELINE=$(line_count_or_zero "$CRASH_LOG_FILE")
+export STARTUP_LOG_BASELINE
+export CORE_LOG_BASELINE
+export CRASH_LOG_BASELINE
 
 
 # Dynamic program list shared by startup.sh and system_shutdown.sh for shutdown cleanup.
@@ -357,6 +380,9 @@ if [ -n "$MORPH_X11_NOTE" ]; then
 fi
 if [ -n "$MORPH_X11_DISPLAY_NOTE" ]; then
     log_startup WARN "$MORPH_X11_DISPLAY_NOTE"
+fi
+if [ -n "$MORPH_LD_LIBRARY_PATH_NOTE" ]; then
+    log_startup WARN "$MORPH_LD_LIBRARY_PATH_NOTE"
 fi
 
 if [ "$MORPH_DBG" -ge 1 ]; then

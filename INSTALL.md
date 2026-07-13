@@ -29,30 +29,32 @@ document mirrors that information so installation steps stay in one place.
 
 ## Release Install
 
-The standard runtime install uses Meson and installs into the configured
-prefix.
+The standard runtime install uses Meson and installs into the system layout
+under `/usr` and `/etc`.
 
 Build and install:
 
 ```bash
+# existing build dir (updates configured defaults such as prefix/sysconfdir)
+# meson setup build --reconfigure
+
+# fresh build dir
 meson setup build
 meson compile -C build
+
+# install into system
 sudo meson install -C build
 ```
 
-Installed artifacts:
+Runtime library lookup note (local wlroots builds):
 
-- `morph` under the configured `bindir` (typically `/usr/local/bin/morph`)
-- `morph-session` under the same `bindir` (typically `/usr/local/bin/morph-session`)
-- runtime files under `sysconfdir/morph` (typically `/usr/local/etc/morph/`)
-- `morph.desktop` under `share/wayland-sessions` (typically `/usr/local/share/wayland-sessions/morph.desktop`)
-- selected documentation under `share/doc/morph` (typically `/usr/local/share/doc/morph/`)
-
-This is the right path for:
-
-- system-wide testing through a display manager
-- packaging
-- any setup that should match the runtime file layout
+- some distributions do not provide `wlroots-0.19` runtime libraries in system
+  paths; in that case Morph may depend on local libraries under `~/.local/lib`
+- if `LD_LIBRARY_PATH` is empty, `morph-session` auto-adds existing local
+  library paths as a fallback and logs a warning
+- for an explicit persistent setup, uncomment the `LD_LIBRARY_PATH` block in
+  `/etc/morph/environment` or in `~/.config/morph/environment`
+- prefer system runtime library packages when available
 
 ## Release Uninstall
 
@@ -65,7 +67,7 @@ Preview the current install manifest:
 ./scripts/system-uninstall.sh --builddir build
 ```
 
-Remove only unchanged installed files:
+Remove **only unchanged** installed files:
 
 ```bash
 sudo ./scripts/system-uninstall.sh --builddir build --remove
@@ -115,14 +117,14 @@ Optional helper installs:
 Options:
 
 - `--link-launcher`
-  - creates `~/.local/bin/morph-dev-session` as a symlink to
-    `testing/morph_run`
+  - creates `~/.local/bin/morph-session_dbg` as a symlink to
+    `testing/morph-session_dbg`
 - `--desktop-local`
   - copies `sessions/morph.desktop` into
     `~/.local/share/wayland-sessions`
 - `--print-sudo-help`
   - prints the commands needed to expose the development session through
-    system paths such as `/usr/local/bin` and `/usr/share/wayland-sessions`
+    system paths such as `/usr/bin` and `/usr/share/wayland-sessions`
 
 Safety behavior:
 
@@ -167,7 +169,7 @@ iteration:
 
 ```bash
 ./scripts/dev-install.sh install --link-launcher
-./testing/morph_run
+./testing/morph-session_dbg
 ```
 
 For display-manager-visible development sessions, use the printed sudo guidance
@@ -176,3 +178,61 @@ from:
 ```bash
 ./scripts/dev-install.sh install --print-sudo-help
 ```
+
+## Morph scripts for building, installing, and uninstalling
+
+There are dedicated Morph helper scripts that make building, installing, and uninstalling a bit easier.
+
+```bash
+# build runtime + debug variants
+./scripts/morph-build.sh --both
+
+# install runtime + debug artifacts
+./scripts/morph-install.sh --both
+
+# uninstall runtime + debug artifacts
+./scripts/morph-uninstall.sh --both
+
+# preview install commands without changes
+./scripts/morph-install.sh --both --dry
+
+# preview uninstall commands without changes
+./scripts/morph-uninstall.sh --both --dry
+```
+
+Build script modes:
+
+- `--runtime` uses `build` with `buildtype=release` and `strip=true`
+- `--debug` uses `build_dbg` with `buildtype=debug` and `strip=false`
+- `--both` runs both build modes in order
+
+Install script modes:
+
+- `--runtime` runs `meson install -C build`
+- `--debug` installs `/usr/bin/morph_dbg`, `/usr/bin/morph-session_dbg`, and
+  `/usr/share/wayland-sessions/morph_dbg.desktop`
+- `--both` runs runtime install first, then debug install
+- `--dry` prints install commands only
+
+Uninstall script modes:
+
+- `--runtime` runs `./scripts/system-uninstall.sh --builddir build --remove`
+- `--debug` removes `/usr/bin/morph_dbg`, `/usr/bin/morph-session_dbg`, and
+  `/usr/share/wayland-sessions/morph_dbg.desktop`
+- `--both` runs runtime uninstall first, then debug uninstall
+- `--dry` prints uninstall commands only
+
+Installed artifacts:
+
+- `morph` under `/usr/bin/morph`
+- `morph-session` under `/usr/bin/morph-session`
+- runtime files under `/etc/morph/`
+- `morph.desktop` under `/usr/share/wayland-sessions/morph.desktop`
+- selected documentation under `/usr/share/doc/morph/`
+
+This is the right path for:
+
+- system-wide testing through a display manager
+- packaging
+- any setup that should match the runtime file layout
+

@@ -553,7 +553,7 @@ EOF
         XDG_STATE_HOME="$tmpdir/state" \
         MORPH_SYSTEM_CONFIG_FILE="$tmpdir/system-config/morph.conf" \
         MORPH_RESOLVE_ONLY=1 \
-        "$repo_root/testing/morph_run"
+        "$repo_root/testing/morph-session_dbg"
 
     assert_file_contains \
         "$(launcher_startup_log_path "$tmpdir/state/morph")" \
@@ -580,7 +580,7 @@ EOF
         XDG_STATE_HOME="$tmpdir/state" \
         MORPH_SYSTEM_CONFIG_FILE="$tmpdir/system-config/morph.conf" \
         MORPH_RESOLVE_ONLY=1 \
-        "$repo_root/testing/morph_run"
+        "$repo_root/testing/morph-session_dbg"
 
     assert_file_contains \
         "$(launcher_startup_log_path "$tmpdir/state/morph")" \
@@ -601,7 +601,7 @@ test_launcher_fails_when_no_config_exists() {
         XDG_STATE_HOME="$tmpdir/state" \
         MORPH_SYSTEM_CONFIG_FILE="$tmpdir/missing-system-config" \
         MORPH_RESOLVE_ONLY=1 \
-        "$repo_root/testing/morph_run" >/dev/null 2>"$tmpdir/stderr.log"
+        "$repo_root/testing/morph-session_dbg" >/dev/null 2>"$tmpdir/stderr.log"
     status=$?
     set -e
 
@@ -623,7 +623,7 @@ test_launcher_can_opt_into_builtin_fallback() {
         MORPH_SYSTEM_CONFIG_FILE="$tmpdir/missing-system-config" \
         MORPH_ALLOW_BUILTIN_FALLBACK=1 \
         MORPH_RESOLVE_ONLY=1 \
-        "$repo_root/testing/morph_run"
+        "$repo_root/testing/morph-session_dbg"
 
     assert_file_contains \
         "$(launcher_startup_log_path "$tmpdir/state/morph")" \
@@ -658,7 +658,7 @@ EOF
         MORPH_SYSTEM_CONFIG_DIR="$tmpdir/system-config" \
         MORPH_RESOLVE_ONLY=1 \
         MORPH_DBG=2 \
-        "$repo_root/testing/morph_run"
+        "$repo_root/testing/morph-session_dbg"
 
     assert_file_contains \
         "$(launcher_startup_log_path "$tmpdir/state/morph")" \

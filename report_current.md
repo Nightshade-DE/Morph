@@ -44,9 +44,9 @@ References:
 
 ## 2. Environment Resolution
 
-- [ ] `MORPH_RESOLVE_ONLY=1 ./testing/morph_run`
-- [ ] `MORPH_DBG=2 MORPH_RESOLVE_ONLY=1 ./testing/morph_run`
-- [ ] `MORPH_ENV_FILE=/path/to/test-environment MORPH_RESOLVE_ONLY=1 ./testing/morph_run`
+- [ ] `MORPH_RESOLVE_ONLY=1 ./testing/morph-session_dbg`
+- [ ] `MORPH_DBG=2 MORPH_RESOLVE_ONLY=1 ./testing/morph-session_dbg`
+- [ ] `MORPH_ENV_FILE=/path/to/test-environment MORPH_RESOLVE_ONLY=1 ./testing/morph-session_dbg`
 
 Filter:
 
@@ -66,9 +66,9 @@ References:
 
 ## 3. Config Resolution
 
-- [ ] `MORPH_RESOLVE_ONLY=1 ./testing/morph_run`
-- [ ] `MORPH_CONFIG=/path/to/other.conf MORPH_RESOLVE_ONLY=1 ./testing/morph_run`
-- [ ] `MORPH_ALLOW_BUILTIN_FALLBACK=1 MORPH_RESOLVE_ONLY=1 ./testing/morph_run`
+- [ ] `MORPH_RESOLVE_ONLY=1 ./testing/morph-session_dbg`
+- [ ] `MORPH_CONFIG=/path/to/other.conf MORPH_RESOLVE_ONLY=1 ./testing/morph-session_dbg`
+- [ ] `MORPH_ALLOW_BUILTIN_FALLBACK=1 MORPH_RESOLVE_ONLY=1 ./testing/morph-session_dbg`
 
 Filter:
 
@@ -89,7 +89,7 @@ References:
 
 ## 4. Dev Wrapper, Native
 
-- [ ] Start `./testing/morph_run` in a native session
+- [ ] Start `./testing/morph-session_dbg` in a native session
 
 Filter:
 
@@ -103,14 +103,14 @@ Expected:
 - Startup hook completes cleanly afterwards
 
 References:
-- `testing/morph_run`
+- `testing/morph-session_dbg`
 - `config/portals`
 - `config/startup.sh`
 - `docs/LAUNCHER.md`
 
 ## 5. Dev Wrapper, Nested
 
-- [ ] Start `./testing/morph_run` inside a running X11 or Wayland session
+- [ ] Start `./testing/morph-session_dbg` inside a running X11 or Wayland session
 
 Filter:
 
@@ -124,7 +124,7 @@ Expected:
 - Native portal startup is skipped
 
 References:
-- `testing/morph_run`
+- `testing/morph-session_dbg`
 - `scripts/system_startup.sh`
 - `docs/LAUNCHER.md`
 
@@ -213,18 +213,18 @@ References:
 
 ## 10. Session Desktop Files and Install Paths
 
-- [ ] `grep -nE '^(Name|Exec|TryExec)=' sessions/morph.desktop sessions/morph-dev.desktop`
+- [ ] `grep -nE '^(Name|Exec|TryExec)=' sessions/morph.desktop sessions/morph_dbg.desktop`
 - [ ] `meson introspect --installed build`
 - [ ] `./scripts/dev-install.sh install --print-sudo-help`
 
 Expected:
 - `sessions/morph.desktop` uses `morph-session`
-- `sessions/morph-dev.desktop` points to the dev wrapper
+- `sessions/morph_dbg.desktop` points to the dev wrapper
 - Meson installs docs and session files to the new target locations
 
 References:
 - `sessions/morph.desktop`
-- `sessions/morph-dev.desktop`
+- `sessions/morph_dbg.desktop`
 - `scripts/dev-install.sh`
 - `meson.build`
 

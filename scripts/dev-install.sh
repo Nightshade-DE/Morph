@@ -14,8 +14,8 @@ COMP_ROOT_DIR=$(dirname "$SCRIPT_DIR")
 USER_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/morph"
 USER_BIN_DIR="${HOME}/.local/bin"
 SYSTEM_DESKTOP_TARGET="/usr/share/wayland-sessions/morph.desktop"
-SYSTEM_DEV_DESKTOP_TARGET="/usr/share/wayland-sessions/morph-dev.desktop"
-SYSTEM_DEV_LAUNCHER_TARGET="/usr/local/bin/morph-dev-session"
+SYSTEM_DEV_DESKTOP_TARGET="/usr/share/wayland-sessions/morph_dbg.desktop"
+SYSTEM_DEV_LAUNCHER_TARGET="/usr/bin/morph-session_dbg"
 LOCAL_DESKTOP_DIR="${HOME}/.local/share/wayland-sessions"
 
 usage() {
@@ -23,7 +23,7 @@ usage() {
 Usage: scripts/dev-install.sh <install|uninstall> [options]
 
 Options:
-  --link-launcher      Symlink testing/morph_run into ~/.local/bin/morph-dev-session
+  --link-launcher      Symlink testing/morph-session_dbg into ~/.local/bin/morph-session_dbg
   --desktop-local      Copy the session desktop file into ~/.local/share/wayland-sessions
   --print-sudo-help    Print sudo commands for a display-manager-visible dev session
 
@@ -98,11 +98,11 @@ uninstall_user_links() {
 
 install_local_launcher_link() {
     mkdir -p "$USER_BIN_DIR"
-    link_if_missing "$COMP_ROOT_DIR/testing/morph_run" "$USER_BIN_DIR/morph-dev-session"
+    link_if_missing "$COMP_ROOT_DIR/testing/morph-session_dbg" "$USER_BIN_DIR/morph-session_dbg"
 }
 
 uninstall_local_launcher_link() {
-    unlink_if_matches "$COMP_ROOT_DIR/testing/morph_run" "$USER_BIN_DIR/morph-dev-session"
+    unlink_if_matches "$COMP_ROOT_DIR/testing/morph-session_dbg" "$USER_BIN_DIR/morph-session_dbg"
 }
 
 install_local_desktop_copy() {
@@ -113,8 +113,8 @@ install_local_desktop_copy() {
 
 print_sudo_help() {
     printf 'Display-manager-visible dev session install:\n'
-    printf '  sudo ln -sf %s %s\n' "$COMP_ROOT_DIR/testing/morph_run" "$SYSTEM_DEV_LAUNCHER_TARGET"
-    printf '  sudo install -m 0644 %s %s\n' "$COMP_ROOT_DIR/sessions/morph-dev.desktop" "$SYSTEM_DEV_DESKTOP_TARGET"
+    printf '  sudo ln -sf %s %s\n' "$COMP_ROOT_DIR/testing/morph-session_dbg" "$SYSTEM_DEV_LAUNCHER_TARGET"
+    printf '  sudo install -m 0644 %s %s\n' "$COMP_ROOT_DIR/sessions/morph_dbg.desktop" "$SYSTEM_DEV_DESKTOP_TARGET"
     printf '\n'
     printf 'Optional production desktop install from the current build layout:\n'
     printf '  sudo install -m 0644 %s %s\n' "$COMP_ROOT_DIR/sessions/morph.desktop" "$SYSTEM_DESKTOP_TARGET"

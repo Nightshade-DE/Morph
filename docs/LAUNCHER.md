@@ -2,7 +2,7 @@
 
 This document describes the runtime launcher behavior shared by **Morph**'s two shell wrappers:
 
-- the development launcher [`testing/morph_run`](../testing/morph_run)
+- the development launcher [`testing/morph-session_dbg`](../testing/morph-session_dbg)
 - the installed runtime wrapper [`scripts/morph-session`](../scripts/morph-session)
 
 Use this guide for:
@@ -22,7 +22,7 @@ For all environment variables and examples, including XKB settings, see:
 
 ## Wrapper Roles
 
-[`testing/morph_run`](../testing/morph_run) is the repo-local development wrapper.
+[`testing/morph-session_dbg`](../testing/morph-session_dbg) is the repo-local development wrapper.
 It is meant for nested testing, local builds, fast validation, and launcher experiments.
 
 [`scripts/morph-session`](../scripts/morph-session) is the installed runtime wrapper.
@@ -40,7 +40,7 @@ Both wrappers keep the same managed hook model around **Morph**:
 
 ## Wrapper Differences
 
-### Development launcher: [`testing/morph_run`](../testing/morph_run)
+### Development launcher: [`testing/morph-session_dbg`](../testing/morph-session_dbg)
 
 - uses repository-local defaults such as `./build/morph`
 - prefers repository files under `config/` and `testing/`
@@ -79,7 +79,7 @@ Both wrappers follow the same high-level layering model:
 
 1. Caller environment
 
-   Example: `MORPH_DBG=2 ./testing/morph_run`
+   Example: `MORPH_DBG=2 ./testing/morph-session_dbg`
 
    Example: `MORPH_CONFIG=/tmp/debug.conf morph-session`
 
@@ -112,7 +112,7 @@ Common behavior:
 
 Default environment files differ by wrapper:
 
-- [`testing/morph_run`](../testing/morph_run) uses the repository-local [`testing/config/environment`](../testing/config/environment)
+- [`testing/morph-session_dbg`](../testing/morph-session_dbg) uses the repository-local [`testing/config/environment`](../testing/config/environment)
 - [`scripts/morph-session`](../scripts/morph-session) uses `/etc/morph/environment` by default; repo source: [`config/environment`](../config/environment)
 - both wrappers also read the user override `~/.config/morph/environment` when it exists
 
@@ -131,7 +131,7 @@ Shared priority:
 
 Default config paths differ by wrapper:
 
-- [`testing/morph_run`](../testing/morph_run) uses the repository-local config as its system-side default; repo source: [`testing/config/morph.conf`](../testing/config/morph.conf)
+- [`testing/morph-session_dbg`](../testing/morph-session_dbg) uses the repository-local config as its system-side default; repo source: [`testing/config/morph.conf`](../testing/config/morph.conf)
 - [`scripts/morph-session`](../scripts/morph-session) uses `/etc/morph/morph.conf` as its system-side default; repo source: [`config/morph.conf`](../config/morph.conf)
 - both wrappers still prefer `~/.config/morph/morph.conf` as the user fallback
 
@@ -235,14 +235,14 @@ Do not edit it manually.
 Development wrapper:
 
 ```sh
-./testing/morph_run
-MORPH_DBG=1 ./testing/morph_run
-MORPH_DBG=2 ./testing/morph_run
-MORPH_CONFIG=/path/to/other.conf ./testing/morph_run
-MORPH_X11=0 ./testing/morph_run
-MORPH_X11_DISPLAY=:12 ./testing/morph_run
-MORPH_LOG_DIR=/tmp/morph-test ./testing/morph_run
-MORPH_ALLOW_BUILTIN_FALLBACK=1 ./testing/morph_run
+./testing/morph-session_dbg
+MORPH_DBG=1 ./testing/morph-session_dbg
+MORPH_DBG=2 ./testing/morph-session_dbg
+MORPH_CONFIG=/path/to/other.conf ./testing/morph-session_dbg
+MORPH_X11=0 ./testing/morph-session_dbg
+MORPH_X11_DISPLAY=:12 ./testing/morph-session_dbg
+MORPH_LOG_DIR=/tmp/morph-test ./testing/morph-session_dbg
+MORPH_ALLOW_BUILTIN_FALLBACK=1 ./testing/morph-session_dbg
 ```
 
 Runtime wrapper:

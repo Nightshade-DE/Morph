@@ -56,23 +56,11 @@ meson compile -C build
 ./build/morph
 ```
 
-Recommended development launcher:
-
-```bash
-./testing/morph_run
-```
-
-Useful runtime overrides:
-
-- [`MORPH_DBG=0|1|2`](docs/ENVIRONMENT.md#morph-dbg)
-- [`MORPH_CONFIG=/path/to/config`](docs/ENVIRONMENT.md#morph-config)
-- [`MORPH_ALLOW_BUILTIN_FALLBACK=1`](docs/ENVIRONMENT.md#morph-allow-builtin-fallback)
-- [`MORPH_X11=0|1`](docs/ENVIRONMENT.md#morph-x11)
-- [`MORPH_X11_DISPLAY=:12`](docs/ENVIRONMENT.md#morph-x11-display)
+Or use the helper script `morph-build.sh`. See [`INSTALL.md`](INSTALL.md) for more infos.
 
 ## Tests
 
-Run the automated suite with:
+Run automated tests with:
 
 ```bash
 meson test -C build --print-errorlogs
@@ -80,7 +68,12 @@ meson test -C build --print-errorlogs
 
 For the broader local workflow, including smoke checks and manual validation entry points, see [`docs/TESTING.md`](docs/TESTING.md).
 
-## Install Paths
+## Installation
+
+Morph can be installed in two variants: 
+
+- Release/Runtime for normal use
+- Debug/Development for debugging, toubleshooting and development
 
 See [`INSTALL.md`](INSTALL.md) for:
 

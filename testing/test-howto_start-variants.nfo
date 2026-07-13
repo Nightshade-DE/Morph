@@ -11,7 +11,7 @@ Key paths
 ---------
 Project root: <your_local_repo>/morph
 Binary:       <your_local_repo>/morph/build/morph
-Launcher:     <your_local_repo>/morph/testing/morph_run
+Launcher:     <your_local_repo>/morph/testing/morph-session_dbg
 Runtime wrapper: /usr/local/bin/morph-session (or your package prefix bindir)
 Env file:     <your_local_repo>/morph/testing/config/environment
 Default cfg:  <your_local_repo>/morph/testing/config/morph.conf
@@ -83,10 +83,10 @@ Use this runbook for everything that still needs manual session validation.
 A) Launcher config model
 ------------------------
 The launcher resolves settings in this order:
-1) Caller environment (one-shot VAR=... ./testing/morph_run)
+1) Caller environment (one-shot VAR=... ./testing/morph-session_dbg)
 2) User environment file under `~/.config/morph` / XDG config home
 3) System environment file (`testing/config/environment` in the current dev flow, or `MORPH_ENV_FILE` when set)
-4) Built-in defaults in testing/morph_run
+4) Built-in defaults in testing/morph-session_dbg
 
 Note:
 testing/config/environment is override-oriented. Values can stay commented out.
@@ -112,7 +112,7 @@ C) Native test (TTY / DRM+libinput)
 Run from a VT/TTY (outside another desktop session):
 
   cd <your_local_repo>/morph
-  ./testing/morph_run
+  ./testing/morph-session_dbg
 
 Check:
 - startup summary contains session mode native-tty
@@ -126,7 +126,7 @@ D) Nested test (inside X11 or Wayland session)
 Run from terminal inside existing desktop session:
 
   cd <your_local_repo>/morph
-  ./testing/morph_run
+  ./testing/morph-session_dbg
 
 Check:
 - startup summary shows nested-x11 or nested-wayland
@@ -187,13 +187,13 @@ Session-aware default when MORPH_X11 is unset:
 - native (drm,libinput): MORPH_X11 defaults to 1
 
 Force disable:
-  MORPH_X11=0 ./testing/morph_run
+  MORPH_X11=0 ./testing/morph-session_dbg
 
 Force enable:
-  MORPH_X11=1 ./testing/morph_run
+  MORPH_X11=1 ./testing/morph-session_dbg
 
 Force X11 display:
-  MORPH_X11_DISPLAY=:12 ./testing/morph_run
+  MORPH_X11_DISPLAY=:12 ./testing/morph-session_dbg
 
 Confirm:
   rg -n "xwayland-satellite|DISPLAY=|WAYLAND_DISPLAY=|MORPH_X11" "$XDG_STATE_HOME"/morph/*.log
@@ -203,7 +203,7 @@ F) Config override test
 -----------------------
 Use alternate config without editing launcher:
 
-  MORPH_CONFIG=/path/to/other.conf ./testing/morph_run
+  MORPH_CONFIG=/path/to/other.conf ./testing/morph-session_dbg
 
 Check startup summary line:
 - "Config file path: ... (override from MORPH_CONFIG)"
@@ -213,7 +213,7 @@ G) Log directory override test
 ------------------------------
 Route logs to custom path:
 
-  MORPH_LOG_DIR=/tmp/morph-test ./testing/morph_run
+  MORPH_LOG_DIR=/tmp/morph-test ./testing/morph-session_dbg
 
 Check:
   ls -1 /tmp/morph-test
@@ -268,10 +268,10 @@ Also needed: the last 120 lines from startup log.
 K) Suggested test sequence
 --------------------------
 1) ninja -C build
-2) MORPH_DBG=0 ./testing/morph_run (baseline release mode)
-3) MORPH_DBG=1 ./testing/morph_run (release-debug logs)
-4) MORPH_DBG=2 ./testing/morph_run (debug + crash handler)
-5) MORPH_CONFIG=/path/to/alt.conf ./testing/morph_run
+2) MORPH_DBG=0 ./testing/morph-session_dbg (baseline release mode)
+3) MORPH_DBG=1 ./testing/morph-session_dbg (release-debug logs)
+4) MORPH_DBG=2 ./testing/morph-session_dbg (debug + crash handler)
+5) MORPH_CONFIG=/path/to/alt.conf ./testing/morph-session_dbg
 6) Optional nested run with MORPH_X11=0 and then MORPH_X11=1
 7) Optional no-config recovery run with MORPH_ALLOW_BUILTIN_FALLBACK=1
 
@@ -282,7 +282,7 @@ Run once:
   LOG_BASE="${XDG_STATE_HOME:-$HOME/.local/state}/morph"
 
 1) Verify invalid env fallback + warning logs:
-  MORPH_DBG=abc MORPH_X11=maybe MORPH_X11_DISPLAY=foo ./testing/morph_run
+  MORPH_DBG=abc MORPH_X11=maybe MORPH_X11_DISPLAY=foo ./testing/morph-session_dbg
   rg -n "invalid MORPH_DBG|invalid MORPH_X11|invalid MORPH_X11_DISPLAY" "$LOG_BASE"/morph*-startup.log
 
 2) Verify shutdown list is runtime state under XDG state path:
