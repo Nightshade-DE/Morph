@@ -17,11 +17,10 @@ Options:
   --dry       Print commands only (no changes)
 
 Debug install artifacts:
-  - /usr/bin/morph_dbg            (from ./build_dbg/morph)
+    - /usr/bin/morph_dbg            (symlink to ./build_dbg/morph)
     - /usr/bin/morph-session_dbg    (symlink to ./testing/morph-session_dbg)
-  - /usr/share/wayland-sessions/morph_dbg.desktop
-    - /usr/share/icons/hicolor/scalable/apps/morph.svg
-    - /usr/share/icons/hicolor/scalable/apps/morph_dbg.svg
+    - /usr/share/wayland-sessions/morph_dbg.desktop (symlink to ./sessions/morph_dbg.desktop)
+    - /usr/share/icons/hicolor/scalable/apps/morph_dbg.svg (symlink to ./assets/icons/morph_dbg.svg)
 
 Notes:
   - Runtime install stays Meson-managed.
@@ -74,11 +73,11 @@ print_runtime_dry_plan() {
     manifest="$(meson introspect --installed build 2>/dev/null || true)"
 
     if [ -z "$manifest" ] || [ "$manifest" = "{}" ]; then
-        printf '[dry] runtime install targets: unavailable (meson introspect returned no entries)\n'
+        printf 'runtime install targets: unavailable (meson introspect returned no entries)\n'
         return 0
     fi
 
-    printf '[dry] runtime install targets:\n'
+    printf 'runtime install targets:\n'
     printf '%s\n' "$manifest" \
         | tr ',' '\n' \
         | sed -nE 's/^[[:space:]]*\{[[:space:]]*//; s/[[:space:]]*\}[[:space:]]*$//; s/^[[:space:]]*"([^"]+)"[[:space:]]*:[[:space:]]*"([^"]+)"[[:space:]]*$/  \2 <= \1/p'
@@ -92,17 +91,12 @@ print_target_line() {
 }
 
 print_debug_plan() {
-    if [ "$DRY" -eq 1 ]; then
-        printf '[dry] debug install targets:\n'
-    else
-        printf '[morph-install] debug install targets:\n'
-    fi
+    printf 'debug install targets:\n'
 
-    print_target_line "$PWD/build_dbg/morph" /usr/bin/morph_dbg file
+    print_target_line "$PWD/build_dbg/morph" /usr/bin/morph_dbg symlink
     print_target_line "$PWD/testing/morph-session_dbg" /usr/bin/morph-session_dbg symlink
-    print_target_line "$PWD/sessions/morph_dbg.desktop" /usr/share/wayland-sessions/morph_dbg.desktop file
-    print_target_line "$PWD/assets/icons/morph.svg" /usr/share/icons/hicolor/scalable/apps/morph.svg file
-    print_target_line "$PWD/assets/icons/morph_dbg.svg" /usr/share/icons/hicolor/scalable/apps/morph_dbg.svg file
+    print_target_line "$PWD/sessions/morph_dbg.desktop" /usr/share/wayland-sessions/morph_dbg.desktop symlink
+    print_target_line "$PWD/assets/icons/morph_dbg.svg" /usr/share/icons/hicolor/scalable/apps/morph_dbg.svg symlink
 }
 
 install_debug_file() {
@@ -196,11 +190,6 @@ install_debug() {
         exit 1
     fi
 
-    if [ ! -f "assets/icons/morph.svg" ]; then
-        printf 'Missing icon source: ./assets/icons/morph.svg\n' >&2
-        exit 1
-    fi
-
     if [ ! -f "assets/icons/morph_dbg.svg" ]; then
         printf 'Missing icon source: ./assets/icons/morph_dbg.svg\n' >&2
         exit 1
@@ -212,11 +201,10 @@ install_debug() {
     run_root install -d /usr/bin
     run_root install -d /usr/share/wayland-sessions
     run_root install -d /usr/share/icons/hicolor/scalable/apps
-    install_debug_file 0755 build_dbg/morph /usr/bin/morph_dbg
+    install_debug_symlink build_dbg/morph /usr/bin/morph_dbg
     install_debug_symlink testing/morph-session_dbg /usr/bin/morph-session_dbg
-    install_debug_file 0644 sessions/morph_dbg.desktop /usr/share/wayland-sessions/morph_dbg.desktop
-    install_debug_file 0644 assets/icons/morph.svg /usr/share/icons/hicolor/scalable/apps/morph.svg
-    install_debug_file 0644 assets/icons/morph_dbg.svg /usr/share/icons/hicolor/scalable/apps/morph_dbg.svg
+    install_debug_symlink sessions/morph_dbg.desktop /usr/share/wayland-sessions/morph_dbg.desktop
+    install_debug_symlink assets/icons/morph_dbg.svg /usr/share/icons/hicolor/scalable/apps/morph_dbg.svg
 }
 
 case "$MODE" in

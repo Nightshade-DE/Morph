@@ -15,7 +15,6 @@ COMP_ROOT_DIR=$(dirname "$SCRIPT_DIR")
 # Target layout for user-local and system-visible dev session helpers.
 USER_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/morph"
 USER_BIN_DIR="${HOME}/.local/bin"
-SYSTEM_DESKTOP_TARGET="/usr/share/wayland-sessions/morph.desktop"
 SYSTEM_DEV_DESKTOP_TARGET="/usr/share/wayland-sessions/morph_dbg.desktop"
 SYSTEM_DEV_BIN_TARGET="/usr/bin/morph_dbg"
 SYSTEM_DEV_LAUNCHER_TARGET="/usr/bin/morph-session_dbg"
@@ -29,7 +28,7 @@ Usage: scripts/dev-install.sh <install|uninstall> [options]
 
 Options:
   --link-launcher      Symlink testing/morph-session_dbg into ~/.local/bin/morph-session_dbg
-  --desktop-local      Copy session desktop file and icons into ~/.local/share
+    --desktop-local      Copy debug session desktop file and icon into ~/.local/share
   --system-links       Install/remove system-visible debug symlinks under /usr
   --dry                Print planned commands only (no changes)
   --print-sudo-help    Print sudo commands for a display-manager-visible dev session
@@ -78,8 +77,7 @@ print_install_targets() {
     fi
 
     if [ "$DESKTOP_LOCAL" -eq 1 ]; then
-        print_target_line "$COMP_ROOT_DIR/sessions/morph.desktop" "$LOCAL_DESKTOP_DIR/morph.desktop" copy
-        print_target_line "$COMP_ROOT_DIR/assets/icons/morph.svg" "$LOCAL_ICON_DIR/morph.svg" copy
+        print_target_line "$COMP_ROOT_DIR/sessions/morph_dbg.desktop" "$LOCAL_DESKTOP_DIR/morph_dbg.desktop" copy
         print_target_line "$COMP_ROOT_DIR/assets/icons/morph_dbg.svg" "$LOCAL_ICON_DIR/morph_dbg.svg" copy
     fi
 
@@ -115,6 +113,11 @@ link_if_missing() {
         return 0
     fi
 
+    if [ "$DRY" -eq 1 ]; then
+        printf '[dry] ln -s %s %s\n' "$src" "$dst"
+        return 0
+    fi
+
     ln -s "$src" "$dst"
     printf 'Linked %s -> %s\n' "$dst" "$src"
 }
@@ -130,6 +133,11 @@ unlink_if_matches() {
     current_target=$(readlink -f "$dst")
     if [ "$current_target" != "$src" ]; then
         printf 'Keeping unrelated symlink: %s\n' "$dst"
+        return 0
+    fi
+
+    if [ "$DRY" -eq 1 ]; then
+        printf '[dry] rm -f %s\n' "$dst"
         return 0
     fi
 
@@ -161,14 +169,21 @@ uninstall_local_launcher_link() {
 }
 
 install_local_desktop_copy() {
+    if [ "$DRY" -eq 1 ]; then
+        printf '[dry] install -d %s\n' "$LOCAL_DESKTOP_DIR"
+        printf '[dry] install -m 0644 %s %s/morph_dbg.desktop\n' "$COMP_ROOT_DIR/sessions/morph_dbg.desktop" "$LOCAL_DESKTOP_DIR"
+        printf '[dry] install -d %s\n' "$LOCAL_ICON_DIR"
+        printf '[dry] install -m 0644 %s %s/morph_dbg.svg\n' "$COMP_ROOT_DIR/assets/icons/morph_dbg.svg" "$LOCAL_ICON_DIR"
+        return 0
+    fi
+
     mkdir -p "$LOCAL_DESKTOP_DIR"
-    install -m 0644 "$COMP_ROOT_DIR/sessions/morph.desktop" "$LOCAL_DESKTOP_DIR/morph.desktop"
-    printf 'Installed local desktop file at %s/morph.desktop\n' "$LOCAL_DESKTOP_DIR"
+    install -m 0644 "$COMP_ROOT_DIR/sessions/morph_dbg.desktop" "$LOCAL_DESKTOP_DIR/morph_dbg.desktop"
+    printf 'Installed local desktop file at %s/morph_dbg.desktop\n' "$LOCAL_DESKTOP_DIR"
 
     mkdir -p "$LOCAL_ICON_DIR"
-    install -m 0644 "$COMP_ROOT_DIR/assets/icons/morph.svg" "$LOCAL_ICON_DIR/morph.svg"
     install -m 0644 "$COMP_ROOT_DIR/assets/icons/morph_dbg.svg" "$LOCAL_ICON_DIR/morph_dbg.svg"
-    printf 'Installed local icons at %s/{morph.svg,morph_dbg.svg}\n' "$LOCAL_ICON_DIR"
+    printf 'Installed local icon at %s/morph_dbg.svg\n' "$LOCAL_ICON_DIR"
 }
 
 install_system_links() {
@@ -197,10 +212,9 @@ uninstall_system_links() {
 print_sudo_help() {
     printf 'Display-manager-visible dev session install:\n'
     printf '  sudo ln -sf %s %s\n' "$COMP_ROOT_DIR/testing/morph-session_dbg" "$SYSTEM_DEV_LAUNCHER_TARGET"
-    printf '  sudo install -m 0644 %s %s\n' "$COMP_ROOT_DIR/sessions/morph_dbg.desktop" "$SYSTEM_DEV_DESKTOP_TARGET"
+    printf '  sudo ln -sf %s %s\n' "$COMP_ROOT_DIR/sessions/morph_dbg.desktop" "$SYSTEM_DEV_DESKTOP_TARGET"
     printf '  sudo install -d %s\n' "$SYSTEM_ICON_DIR"
-    printf '  sudo install -m 0644 %s %s/morph.svg\n' "$COMP_ROOT_DIR/assets/icons/morph.svg" "$SYSTEM_ICON_DIR"
-    printf '  sudo install -m 0644 %s %s/morph_dbg.svg\n' "$COMP_ROOT_DIR/assets/icons/morph_dbg.svg" "$SYSTEM_ICON_DIR"
+    printf '  sudo ln -sf %s %s/morph_dbg.svg\n' "$COMP_ROOT_DIR/assets/icons/morph_dbg.svg" "$SYSTEM_ICON_DIR"
     printf '\n'
     printf 'Note:\n'
     printf '  morph-session_dbg runs directly from the repository and uses\n'
@@ -212,8 +226,8 @@ print_sudo_help() {
     printf '  ./scripts/morph-install.sh --runtime\n'
     printf '  # or: sudo meson install -C build\n'
     printf '\n'
-    printf 'Optional production desktop install from the current build layout:\n'
-    printf '  sudo install -m 0644 %s %s\n' "$COMP_ROOT_DIR/sessions/morph.desktop" "$SYSTEM_DESKTOP_TARGET"
+    printf 'Runtime session desktop remains part of runtime install only:\n'
+    printf '  ./scripts/morph-install.sh --runtime\n'
 }
 
 ACTION="${1:-}"
