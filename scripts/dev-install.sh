@@ -17,6 +17,7 @@ USER_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/morph"
 USER_BIN_DIR="${HOME}/.local/bin"
 SYSTEM_DESKTOP_TARGET="/usr/share/wayland-sessions/morph.desktop"
 SYSTEM_DEV_DESKTOP_TARGET="/usr/share/wayland-sessions/morph_dbg.desktop"
+SYSTEM_DEV_BIN_TARGET="/usr/bin/morph_dbg"
 SYSTEM_DEV_LAUNCHER_TARGET="/usr/bin/morph-session_dbg"
 LOCAL_DESKTOP_DIR="${HOME}/.local/share/wayland-sessions"
 LOCAL_ICON_DIR="${HOME}/.local/share/icons/hicolor/scalable/apps"
@@ -29,6 +30,8 @@ Usage: scripts/dev-install.sh <install|uninstall> [options]
 Options:
   --link-launcher      Symlink testing/morph-session_dbg into ~/.local/bin/morph-session_dbg
   --desktop-local      Copy session desktop file and icons into ~/.local/share
+  --system-links       Install/remove system-visible debug symlinks under /usr
+  --dry                Print planned commands only (no changes)
   --print-sudo-help    Print sudo commands for a display-manager-visible dev session
 
 Behavior:
@@ -38,6 +41,54 @@ Behavior:
   - uninstall removes only symlinks created by this script
   - real user files are never replaced or removed automatically
 EOF
+}
+
+run_root() {
+    if [ "$DRY" -eq 1 ]; then
+        printf '[dry] %s\n' "$*"
+        return 0
+    fi
+
+    if [ "$(id -u)" -eq 0 ]; then
+        "$@"
+    elif command -v sudo >/dev/null 2>&1; then
+        sudo "$@"
+    else
+        printf 'Need root privileges for command: %s\n' "$*" >&2
+        printf 'Run as root or install sudo.\n' >&2
+        exit 1
+    fi
+}
+
+print_target_line() {
+    src="$1"
+    dst="$2"
+    mode="$3"
+    printf '  %s <= %s (%s)\n' "$dst" "$src" "$mode"
+}
+
+print_install_targets() {
+    printf 'dev install targets:\n'
+    for rel in morph.conf startup.sh reload.sh shutdown.sh environment portals; do
+        print_target_line "$COMP_ROOT_DIR/testing/config/$rel" "$USER_CONFIG_DIR/$rel" symlink
+    done
+
+    if [ "$LINK_LAUNCHER" -eq 1 ]; then
+        print_target_line "$COMP_ROOT_DIR/testing/morph-session_dbg" "$USER_BIN_DIR/morph-session_dbg" symlink
+    fi
+
+    if [ "$DESKTOP_LOCAL" -eq 1 ]; then
+        print_target_line "$COMP_ROOT_DIR/sessions/morph.desktop" "$LOCAL_DESKTOP_DIR/morph.desktop" copy
+        print_target_line "$COMP_ROOT_DIR/assets/icons/morph.svg" "$LOCAL_ICON_DIR/morph.svg" copy
+        print_target_line "$COMP_ROOT_DIR/assets/icons/morph_dbg.svg" "$LOCAL_ICON_DIR/morph_dbg.svg" copy
+    fi
+
+    if [ "$SYSTEM_LINKS" -eq 1 ]; then
+        print_target_line "$COMP_ROOT_DIR/build_dbg/morph" "$SYSTEM_DEV_BIN_TARGET" symlink
+        print_target_line "$COMP_ROOT_DIR/testing/morph-session_dbg" "$SYSTEM_DEV_LAUNCHER_TARGET" symlink
+        print_target_line "$COMP_ROOT_DIR/sessions/morph_dbg.desktop" "$SYSTEM_DEV_DESKTOP_TARGET" symlink
+        print_target_line "$COMP_ROOT_DIR/assets/icons/morph_dbg.svg" "$SYSTEM_ICON_DIR/morph_dbg.svg" symlink
+    fi
 }
 
 link_if_missing() {
@@ -120,6 +171,29 @@ install_local_desktop_copy() {
     printf 'Installed local icons at %s/{morph.svg,morph_dbg.svg}\n' "$LOCAL_ICON_DIR"
 }
 
+install_system_links() {
+    if [ ! -x "$COMP_ROOT_DIR/build_dbg/morph" ]; then
+        printf 'Missing debug binary: %s\n' "$COMP_ROOT_DIR/build_dbg/morph" >&2
+        printf 'Run: ./scripts/morph-build.sh --debug\n' >&2
+        exit 1
+    fi
+
+    run_root install -d /usr/bin
+    run_root install -d /usr/share/wayland-sessions
+    run_root install -d "$SYSTEM_ICON_DIR"
+    run_root ln -sfn "$COMP_ROOT_DIR/build_dbg/morph" "$SYSTEM_DEV_BIN_TARGET"
+    run_root ln -sfn "$COMP_ROOT_DIR/testing/morph-session_dbg" "$SYSTEM_DEV_LAUNCHER_TARGET"
+    run_root ln -sfn "$COMP_ROOT_DIR/sessions/morph_dbg.desktop" "$SYSTEM_DEV_DESKTOP_TARGET"
+    run_root ln -sfn "$COMP_ROOT_DIR/assets/icons/morph_dbg.svg" "$SYSTEM_ICON_DIR/morph_dbg.svg"
+}
+
+uninstall_system_links() {
+    run_root rm -f "$SYSTEM_DEV_BIN_TARGET"
+    run_root rm -f "$SYSTEM_DEV_LAUNCHER_TARGET"
+    run_root rm -f "$SYSTEM_DEV_DESKTOP_TARGET"
+    run_root rm -f "$SYSTEM_ICON_DIR/morph_dbg.svg"
+}
+
 print_sudo_help() {
     printf 'Display-manager-visible dev session install:\n'
     printf '  sudo ln -sf %s %s\n' "$COMP_ROOT_DIR/testing/morph-session_dbg" "$SYSTEM_DEV_LAUNCHER_TARGET"
@@ -127,6 +201,16 @@ print_sudo_help() {
     printf '  sudo install -d %s\n' "$SYSTEM_ICON_DIR"
     printf '  sudo install -m 0644 %s %s/morph.svg\n' "$COMP_ROOT_DIR/assets/icons/morph.svg" "$SYSTEM_ICON_DIR"
     printf '  sudo install -m 0644 %s %s/morph_dbg.svg\n' "$COMP_ROOT_DIR/assets/icons/morph_dbg.svg" "$SYSTEM_ICON_DIR"
+    printf '\n'
+    printf 'Note:\n'
+    printf '  morph-session_dbg runs directly from the repository and uses\n'
+    printf '  %s/scripts and %s/testing/config as its managed runtime layer.\n' "$COMP_ROOT_DIR" "$COMP_ROOT_DIR"
+    printf '  Therefore, this dev helper does not install shell-helpers.sh or\n'
+    printf '  system_startup.sh/system_reload.sh/system_shutdown.sh into /etc/morph.\n'
+    printf '\n'
+    printf 'Optional runtime-style install (installs /etc/morph files and /usr/bin/morph-session):\n'
+    printf '  ./scripts/morph-install.sh --runtime\n'
+    printf '  # or: sudo meson install -C build\n'
     printf '\n'
     printf 'Optional production desktop install from the current build layout:\n'
     printf '  sudo install -m 0644 %s %s\n' "$COMP_ROOT_DIR/sessions/morph.desktop" "$SYSTEM_DESKTOP_TARGET"
@@ -138,12 +222,16 @@ shift || true
 # Flags are opt-in extras for install/uninstall behavior.
 LINK_LAUNCHER=0
 DESKTOP_LOCAL=0
+SYSTEM_LINKS=0
+DRY=0
 PRINT_SUDO_HELP=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --link-launcher) LINK_LAUNCHER=1 ;;
         --desktop-local) DESKTOP_LOCAL=1 ;;
+        --system-links) SYSTEM_LINKS=1 ;;
+        --dry) DRY=1 ;;
         --print-sudo-help) PRINT_SUDO_HELP=1 ;;
         -h|--help)
             usage
@@ -160,6 +248,8 @@ done
 
 case "$ACTION" in
     install)
+        print_install_targets
+
         # Core dev flow: link testing config into ~/.config/morph.
         install_user_links
         if [ "$LINK_LAUNCHER" -eq 1 ]; then
@@ -167,6 +257,9 @@ case "$ACTION" in
         fi
         if [ "$DESKTOP_LOCAL" -eq 1 ]; then
             install_local_desktop_copy
+        fi
+        if [ "$SYSTEM_LINKS" -eq 1 ]; then
+            install_system_links
         fi
         if [ "$PRINT_SUDO_HELP" -eq 1 ]; then
             print_sudo_help
@@ -176,6 +269,9 @@ case "$ACTION" in
         uninstall_user_links
         if [ "$LINK_LAUNCHER" -eq 1 ]; then
             uninstall_local_launcher_link
+        fi
+        if [ "$SYSTEM_LINKS" -eq 1 ]; then
+            uninstall_system_links
         fi
         ;;
     *)

@@ -58,8 +58,8 @@ launch dunst
 log_startup INFO "Started notification client dunst."
 
 # start editor/viewer with config to see the bindings
-launch mousepad ~/.config/morph/morph.config
-log_startup INFO "Started editor with ~/.config/morph/morph.config."
+launch mousepad "${HOME}"/.config/morph/morph.conf
+log_startup INFO "Started editor with ~/.config/morph/morph.conf."
 
 # Lock after 5 minutes; power off displays after 10 minutes.
 # Restart kanshi when leaving powersave.

@@ -18,7 +18,7 @@ Options:
 
 Debug install artifacts:
   - /usr/bin/morph_dbg            (from ./build_dbg/morph)
-  - /usr/bin/morph-session_dbg    (from ./testing/morph-session_dbg)
+    - /usr/bin/morph-session_dbg    (symlink to ./testing/morph-session_dbg)
   - /usr/share/wayland-sessions/morph_dbg.desktop
     - /usr/share/icons/hicolor/scalable/apps/morph.svg
     - /usr/share/icons/hicolor/scalable/apps/morph_dbg.svg
@@ -84,6 +84,27 @@ print_runtime_dry_plan() {
         | sed -nE 's/^[[:space:]]*\{[[:space:]]*//; s/[[:space:]]*\}[[:space:]]*$//; s/^[[:space:]]*"([^"]+)"[[:space:]]*:[[:space:]]*"([^"]+)"[[:space:]]*$/  \2 <= \1/p'
 }
 
+print_target_line() {
+    src="$1"
+    dst="$2"
+    mode="$3"
+    printf '  %s <= %s (%s)\n' "$dst" "$src" "$mode"
+}
+
+print_debug_plan() {
+    if [ "$DRY" -eq 1 ]; then
+        printf '[dry] debug install targets:\n'
+    else
+        printf '[morph-install] debug install targets:\n'
+    fi
+
+    print_target_line "$PWD/build_dbg/morph" /usr/bin/morph_dbg file
+    print_target_line "$PWD/testing/morph-session_dbg" /usr/bin/morph-session_dbg symlink
+    print_target_line "$PWD/sessions/morph_dbg.desktop" /usr/share/wayland-sessions/morph_dbg.desktop file
+    print_target_line "$PWD/assets/icons/morph.svg" /usr/share/icons/hicolor/scalable/apps/morph.svg file
+    print_target_line "$PWD/assets/icons/morph_dbg.svg" /usr/share/icons/hicolor/scalable/apps/morph_dbg.svg file
+}
+
 install_debug_file() {
     mode="$1"
     src="$2"
@@ -106,6 +127,37 @@ install_debug_file() {
 
     run_root install -C -m "$mode" "$src" "$dst"
     printf '[morph-install] %s: %s\n' "$status" "$dst"
+}
+
+install_debug_symlink() {
+    src="$1"
+    dst="$2"
+
+    src_abs=$(readlink -f "$src")
+    if [ -z "$src_abs" ] || [ ! -e "$src_abs" ]; then
+        printf 'Missing symlink source: %s\n' "$src" >&2
+        exit 1
+    fi
+
+    if [ "$DRY" -eq 1 ]; then
+        run_root ln -sfn "$src_abs" "$dst"
+        return 0
+    fi
+
+    status="linked"
+    if [ -L "$dst" ]; then
+        current_target=$(readlink -f "$dst")
+        if [ "$current_target" = "$src_abs" ]; then
+            status="unchanged"
+        else
+            status="updated"
+        fi
+    elif [ -e "$dst" ]; then
+        status="updated"
+    fi
+
+    run_root ln -sfn "$src_abs" "$dst"
+    printf '[morph-install] %s symlink: %s -> %s\n' "$status" "$dst" "$src_abs"
 }
 
 install_runtime() {
@@ -154,12 +206,14 @@ install_debug() {
         exit 1
     fi
 
+    print_debug_plan
+
     # Ensure destination directories exist before installing explicit debug artifacts.
     run_root install -d /usr/bin
     run_root install -d /usr/share/wayland-sessions
     run_root install -d /usr/share/icons/hicolor/scalable/apps
     install_debug_file 0755 build_dbg/morph /usr/bin/morph_dbg
-    install_debug_file 0755 testing/morph-session_dbg /usr/bin/morph-session_dbg
+    install_debug_symlink testing/morph-session_dbg /usr/bin/morph-session_dbg
     install_debug_file 0644 sessions/morph_dbg.desktop /usr/share/wayland-sessions/morph_dbg.desktop
     install_debug_file 0644 assets/icons/morph.svg /usr/share/icons/hicolor/scalable/apps/morph.svg
     install_debug_file 0644 assets/icons/morph_dbg.svg /usr/share/icons/hicolor/scalable/apps/morph_dbg.svg
