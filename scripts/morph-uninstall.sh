@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Uninstall helper for runtime and debug install flows.
+# Runtime removal delegates to the conservative Meson manifest-based helper.
+# Debug removal deletes explicit artifacts installed by morph-install.sh.
+
 set -euo pipefail
 
 usage() {
@@ -27,6 +31,7 @@ EOF
 MODE="both"
 DRY=0
 
+# Last mode option wins, matching the install/build helper behavior.
 while [ $# -gt 0 ]; do
     case "$1" in
         --runtime) MODE="runtime" ;;
@@ -66,6 +71,7 @@ run_root() {
 remove_if_exists() {
     target="$1"
 
+    # Treat symlinks explicitly so broken links can still be removed.
     if [ -e "$target" ] || [ -L "$target" ]; then
         run_root rm -f "$target"
     else
@@ -74,6 +80,8 @@ remove_if_exists() {
 }
 
 uninstall_runtime() {
+    printf '[morph-uninstall] runtime phase\n'
+
     if [ ! -f "scripts/system-uninstall.sh" ]; then
         printf 'Missing runtime uninstall helper: ./scripts/system-uninstall.sh\n' >&2
         exit 1
@@ -87,6 +95,8 @@ uninstall_runtime() {
 }
 
 uninstall_debug() {
+    printf '[morph-uninstall] debug phase\n'
+
     remove_if_exists /usr/bin/morph_dbg
     remove_if_exists /usr/bin/morph-session_dbg
     remove_if_exists /usr/share/wayland-sessions/morph_dbg.desktop

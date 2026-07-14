@@ -7,10 +7,12 @@
 
 set -eu
 
+# Resolve repository root once so all link/copy sources stay stable.
 REAL_SCRIPT_PATH=$(readlink -f "$0")
 SCRIPT_DIR=$(dirname "$REAL_SCRIPT_PATH")
 COMP_ROOT_DIR=$(dirname "$SCRIPT_DIR")
 
+# Target layout for user-local and system-visible dev session helpers.
 USER_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/morph"
 USER_BIN_DIR="${HOME}/.local/bin"
 SYSTEM_DESKTOP_TARGET="/usr/share/wayland-sessions/morph.desktop"
@@ -133,6 +135,7 @@ print_sudo_help() {
 ACTION="${1:-}"
 shift || true
 
+# Flags are opt-in extras for install/uninstall behavior.
 LINK_LAUNCHER=0
 DESKTOP_LOCAL=0
 PRINT_SUDO_HELP=0
@@ -157,6 +160,7 @@ done
 
 case "$ACTION" in
     install)
+        # Core dev flow: link testing config into ~/.config/morph.
         install_user_links
         if [ "$LINK_LAUNCHER" -eq 1 ]; then
             install_local_launcher_link

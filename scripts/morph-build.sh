@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Unified build entrypoint for runtime/debug variants.
+# Keeps common setup+compile logic in one place so install scripts can rely on
+# predictable build directories.
+
 set -euo pipefail
 
 usage() {
@@ -19,6 +23,7 @@ EOF
 
 MODE="both"
 
+# Last mode option wins, which mirrors common CLI expectation.
 while [ $# -gt 0 ]; do
     case "$1" in
         --runtime) MODE="runtime" ;;
@@ -44,9 +49,11 @@ setup_and_build() {
 
     printf '[morph-build] setup: %s (buildtype=%s, strip=%s)\n' "$builddir" "$buildtype" "$strip"
 
+    # Reconfigure existing build dirs in-place to preserve developer caches.
     if [ -f "$builddir/meson-private/coredata.dat" ]; then
         meson setup "$builddir" --reconfigure --buildtype "$buildtype" -Dstrip="$strip"
     else
+        # First-time setup path.
         meson setup "$builddir" --buildtype "$buildtype" -Dstrip="$strip"
     fi
 

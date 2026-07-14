@@ -64,6 +64,7 @@ done
 
 manifest_json=$(mktemp "${TMPDIR:-/tmp}/morph-install-manifest.XXXXXX")
 manifest_pairs=$(mktemp "${TMPDIR:-/tmp}/morph-install-pairs.XXXXXX")
+# Always cleanup temporary manifest files, even on interrupt.
 trap 'rm -f "$manifest_json" "$manifest_pairs"' EXIT HUP INT TERM
 
 meson introspect --installed "$BUILD_DIR" > "$manifest_json"
@@ -145,5 +146,6 @@ while IFS="$(printf '\t')" read -r src dst; do
     remove_target_if_unchanged "$src" "$dst"
 done < "$manifest_pairs"
 
+# Final directory pruning is best-effort and only removes empty directories.
 prune_empty_parent_dirs
 printf 'Conservative uninstall pass completed.\n'

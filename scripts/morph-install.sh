@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Install helper that combines Meson-managed runtime install with explicit
+# debug-session artifacts.
+
 set -euo pipefail
 
 usage() {
@@ -17,6 +20,8 @@ Debug install artifacts:
   - /usr/bin/morph_dbg            (from ./build_dbg/morph)
   - /usr/bin/morph-session_dbg    (from ./testing/morph-session_dbg)
   - /usr/share/wayland-sessions/morph_dbg.desktop
+    - /usr/share/icons/hicolor/scalable/apps/morph.svg
+    - /usr/share/icons/hicolor/scalable/apps/morph_dbg.svg
 
 Notes:
   - Runtime install stays Meson-managed.
@@ -63,7 +68,49 @@ run_root() {
     fi
 }
 
+print_runtime_dry_plan() {
+    # Read Meson's current install manifest so dry-run output reflects real
+    # runtime targets without requiring root operations.
+    manifest="$(meson introspect --installed build 2>/dev/null || true)"
+
+    if [ -z "$manifest" ] || [ "$manifest" = "{}" ]; then
+        printf '[dry] runtime install targets: unavailable (meson introspect returned no entries)\n'
+        return 0
+    fi
+
+    printf '[dry] runtime install targets:\n'
+    printf '%s\n' "$manifest" \
+        | tr ',' '\n' \
+        | sed -nE 's/^[[:space:]]*\{[[:space:]]*//; s/[[:space:]]*\}[[:space:]]*$//; s/^[[:space:]]*"([^"]+)"[[:space:]]*:[[:space:]]*"([^"]+)"[[:space:]]*$/  \2 <= \1/p'
+}
+
+install_debug_file() {
+    mode="$1"
+    src="$2"
+    dst="$3"
+
+    if [ "$DRY" -eq 1 ]; then
+        run_root install -C -m "$mode" "$src" "$dst"
+        return 0
+    fi
+
+    # Report whether the destination was newly created, updated, or unchanged.
+    status="installed"
+    if [ -e "$dst" ]; then
+        if [ -f "$dst" ] && cmp -s "$src" "$dst"; then
+            status="unchanged"
+        else
+            status="updated"
+        fi
+    fi
+
+    run_root install -C -m "$mode" "$src" "$dst"
+    printf '[morph-install] %s: %s\n' "$status" "$dst"
+}
+
 install_runtime() {
+    printf '[morph-install] runtime phase\n'
+
     if [ ! -f "build/meson-private/coredata.dat" ]; then
         printf 'Runtime build directory not configured: ./build\n' >&2
         printf 'Run: scripts/morph-build.sh --runtime\n' >&2
@@ -72,12 +119,15 @@ install_runtime() {
 
     if [ "$DRY" -eq 1 ]; then
         printf '[dry] sudo meson install -C build\n'
+        print_runtime_dry_plan
     else
         run_root meson install -C build
     fi
 }
 
 install_debug() {
+    printf '[morph-install] debug phase\n'
+
     if [ ! -x "build_dbg/morph" ]; then
         printf 'Debug binary missing: ./build_dbg/morph\n' >&2
         printf 'Run: scripts/morph-build.sh --debug\n' >&2
@@ -94,11 +144,25 @@ install_debug() {
         exit 1
     fi
 
+    if [ ! -f "assets/icons/morph.svg" ]; then
+        printf 'Missing icon source: ./assets/icons/morph.svg\n' >&2
+        exit 1
+    fi
+
+    if [ ! -f "assets/icons/morph_dbg.svg" ]; then
+        printf 'Missing icon source: ./assets/icons/morph_dbg.svg\n' >&2
+        exit 1
+    fi
+
+    # Ensure destination directories exist before installing explicit debug artifacts.
     run_root install -d /usr/bin
     run_root install -d /usr/share/wayland-sessions
-    run_root install -m 0755 build_dbg/morph /usr/bin/morph_dbg
-    run_root install -m 0755 testing/morph-session_dbg /usr/bin/morph-session_dbg
-    run_root install -m 0644 sessions/morph_dbg.desktop /usr/share/wayland-sessions/morph_dbg.desktop
+    run_root install -d /usr/share/icons/hicolor/scalable/apps
+    install_debug_file 0755 build_dbg/morph /usr/bin/morph_dbg
+    install_debug_file 0755 testing/morph-session_dbg /usr/bin/morph-session_dbg
+    install_debug_file 0644 sessions/morph_dbg.desktop /usr/share/wayland-sessions/morph_dbg.desktop
+    install_debug_file 0644 assets/icons/morph.svg /usr/share/icons/hicolor/scalable/apps/morph.svg
+    install_debug_file 0644 assets/icons/morph_dbg.svg /usr/share/icons/hicolor/scalable/apps/morph_dbg.svg
 }
 
 case "$MODE" in

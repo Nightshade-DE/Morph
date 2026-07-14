@@ -269,10 +269,10 @@ morph_resolve_hook_path() {
     esac
 
     case "$hook_cmd" in
-        "~")
+        ~)
             expanded_hook_cmd="$HOME"
             ;;
-        "~/"*)
+        ~/*)
             expanded_hook_cmd="$HOME/${hook_cmd#~/}"
             ;;
         *)
@@ -429,6 +429,7 @@ line_count_or_zero() {
 # Expects LOG_DIR, MORPH_STARTUP_LOG_FILE, MORPH_BIN, CONFIG_FILE, LOG_FILE,
 # CRASH_LOG_FILE, MORPH_LOG_LEVEL and MORPH_ENABLE_CRASH_HANDLER.
 run_morph_with_capture() {
+    # Use a FIFO + tee so logs are persisted while preserving morph's exit code.
     fifo_path=$(mktemp -u "$LOG_DIR/morph-output.XXXXXX.fifo") || return 1
     if ! mkfifo "$fifo_path"; then
         log_startup ERROR "Failed to create output capture FIFO at $fifo_path."
@@ -478,6 +479,7 @@ dump_recent_error_summary() {
         return
     }
 
+    # Scan core and crash logs from their per-run baselines only.
     for pair in \
         "$LOG_FILE:$CORE_LOG_BASELINE" \
         "$CRASH_LOG_FILE:$CRASH_LOG_BASELINE"; do

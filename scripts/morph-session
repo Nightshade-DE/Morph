@@ -77,6 +77,8 @@ done
 
 MORPH_LD_LIBRARY_PATH_NOTE=""
 if [ -z "${LD_LIBRARY_PATH:-}" ]; then
+    # Runtime login-manager sessions often miss user shell library exports.
+    # Build a minimal fallback from common local install locations.
     local_lib_paths=""
     for candidate in "$HOME/.local/lib/x86_64-linux-gnu" "$HOME/.local/lib"; do
         if [ -d "$candidate" ]; then
@@ -395,6 +397,8 @@ if [ "$MORPH_DBG" -ge 1 ]; then
 fi
 
 if morph_env_flag_is_enabled "${MORPH_RESOLVE_ONLY:-0}"; then
+    # Resolve-only mode is used by tests and diagnostics to verify layer
+    # precedence without starting a compositor instance.
     log_startup INFO "Resolve-only mode requested; skipping compositor start after priority checks."
     exit 0
 fi
