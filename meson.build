@@ -31,6 +31,7 @@ morph_bindir = '/usr/bin'
 morph_runtime_dir = '/etc/morph'
 morph_sessions_dir = '/usr/share/wayland-sessions'
 morph_doc_dir = '/usr/share/doc/morph'
+morph_icons_dir = '/usr/share/icons/hicolor/scalable/apps'
 
 xdg_shell_xml = wayland_protocols.get_variable('pkgdatadir') / 'stable/xdg-shell/xdg-shell.xml'
 xdg_shell_server_h = custom_target(
@@ -151,6 +152,14 @@ install_data(
 install_data(
   files('sessions/morph.desktop'),
   install_dir: morph_sessions_dir,
+)
+
+install_data(
+  files(
+    'assets/icons/morph.svg',
+    'assets/icons/morph_dbg.svg',
+  ),
+  install_dir: morph_icons_dir,
 )
 
 install_data(

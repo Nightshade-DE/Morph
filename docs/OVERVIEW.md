@@ -72,12 +72,17 @@ This section is intentionally more detailed than the root [`README.md`](../READM
 | [`protocols/`](../protocols/) | Wayland protocol XML files for headers and generated sources. ||
 | [`scripts/`](../scripts/) | Helpers for startup, reload, shutdown, install, and session management. ||
 |    |└─ [`dev-install.sh`](../scripts/dev-install.sh) | Development install script for **Morph** runtime files and helper symlinks from [`testing/config/`](../testing/config/). |
+|    |└─ [`local-build-test.sh`](../scripts/local-build-test.sh) | Local helper to run a build-and-test loop for quick validation while developing. |
+|    |└─ [`morph-build.sh`](../scripts/morph-build.sh) | Unified build helper for runtime/debug variants (`--runtime`, `--debug`, `--both`). |
+|    |└─ [`morph-install.sh`](../scripts/morph-install.sh) | Unified install helper for runtime/debug artifacts with optional dry-run mode. |
 |    |└─ [`morph-session`](../scripts/morph-session) | Installed runtime **Morph** session wrapper. It resolves environment, config, logs, and session mode for real sessions. |
+|    |└─ [`morph-uninstall.sh`](../scripts/morph-uninstall.sh) | Unified uninstall helper for runtime/debug artifacts with optional dry-run mode. |
 |    |└─ [`shell-helpers.sh`](../scripts/shell-helpers.sh) | Shared shell helper library used throughout the managed session flow. |
 |    |└─ [`system_reload.sh`](../scripts/system_reload.sh) | System reload script for managed config reloads. |
 |    |└─ [`system_shutdown.sh`](../scripts/system_shutdown.sh) | System shutdown script for managed config cleanup. |
 |    |└─ [`system_startup.sh`](../scripts/system_startup.sh) | System startup script for managed config startup. |
 |    |└─ [`system-uninstall.sh`](../scripts/system-uninstall.sh) | Conservative uninstall helper for Meson-installed **Morph** artifacts. |
+|    |└─ [`test-nested-smoke.sh`](../scripts/test-nested-smoke.sh) | Nested smoke-test helper for quick runtime checks in a development session. |
 | [`sessions/`](../sessions/) | Desktop files for runtime and development sessions. ||
 |    |└─ [`morph.desktop`](../sessions/morph.desktop) | Runtime desktop file for login managers. |
 |    |└─ [`morph_dbg.desktop`](../sessions/morph_dbg.desktop) | Development desktop file for local repo testing through a display manager. |

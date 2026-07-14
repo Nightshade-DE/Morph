@@ -1,7 +1,8 @@
 [Desktop Entry]
 Type=Application
 Name=Morph (Dev)
-Comment=Repository-backed Morph session for local launcher testing
+Comment=Morph debug session for local development
+Icon=morph_dbg
 Exec=/usr/bin/morph-session_dbg
 TryExec=/usr/bin/morph-session_dbg
 DesktopNames=Morph

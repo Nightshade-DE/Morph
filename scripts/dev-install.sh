@@ -17,6 +17,8 @@ SYSTEM_DESKTOP_TARGET="/usr/share/wayland-sessions/morph.desktop"
 SYSTEM_DEV_DESKTOP_TARGET="/usr/share/wayland-sessions/morph_dbg.desktop"
 SYSTEM_DEV_LAUNCHER_TARGET="/usr/bin/morph-session_dbg"
 LOCAL_DESKTOP_DIR="${HOME}/.local/share/wayland-sessions"
+LOCAL_ICON_DIR="${HOME}/.local/share/icons/hicolor/scalable/apps"
+SYSTEM_ICON_DIR="/usr/share/icons/hicolor/scalable/apps"
 
 usage() {
     cat <<'EOF'
@@ -24,7 +26,7 @@ Usage: scripts/dev-install.sh <install|uninstall> [options]
 
 Options:
   --link-launcher      Symlink testing/morph-session_dbg into ~/.local/bin/morph-session_dbg
-  --desktop-local      Copy the session desktop file into ~/.local/share/wayland-sessions
+  --desktop-local      Copy session desktop file and icons into ~/.local/share
   --print-sudo-help    Print sudo commands for a display-manager-visible dev session
 
 Behavior:
@@ -109,12 +111,20 @@ install_local_desktop_copy() {
     mkdir -p "$LOCAL_DESKTOP_DIR"
     install -m 0644 "$COMP_ROOT_DIR/sessions/morph.desktop" "$LOCAL_DESKTOP_DIR/morph.desktop"
     printf 'Installed local desktop file at %s/morph.desktop\n' "$LOCAL_DESKTOP_DIR"
+
+    mkdir -p "$LOCAL_ICON_DIR"
+    install -m 0644 "$COMP_ROOT_DIR/assets/icons/morph.svg" "$LOCAL_ICON_DIR/morph.svg"
+    install -m 0644 "$COMP_ROOT_DIR/assets/icons/morph_dbg.svg" "$LOCAL_ICON_DIR/morph_dbg.svg"
+    printf 'Installed local icons at %s/{morph.svg,morph_dbg.svg}\n' "$LOCAL_ICON_DIR"
 }
 
 print_sudo_help() {
     printf 'Display-manager-visible dev session install:\n'
     printf '  sudo ln -sf %s %s\n' "$COMP_ROOT_DIR/testing/morph-session_dbg" "$SYSTEM_DEV_LAUNCHER_TARGET"
     printf '  sudo install -m 0644 %s %s\n' "$COMP_ROOT_DIR/sessions/morph_dbg.desktop" "$SYSTEM_DEV_DESKTOP_TARGET"
+    printf '  sudo install -d %s\n' "$SYSTEM_ICON_DIR"
+    printf '  sudo install -m 0644 %s %s/morph.svg\n' "$COMP_ROOT_DIR/assets/icons/morph.svg" "$SYSTEM_ICON_DIR"
+    printf '  sudo install -m 0644 %s %s/morph_dbg.svg\n' "$COMP_ROOT_DIR/assets/icons/morph_dbg.svg" "$SYSTEM_ICON_DIR"
     printf '\n'
     printf 'Optional production desktop install from the current build layout:\n'
     printf '  sudo install -m 0644 %s %s\n' "$COMP_ROOT_DIR/sessions/morph.desktop" "$SYSTEM_DESKTOP_TARGET"
