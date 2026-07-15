@@ -244,6 +244,8 @@ struct comp_server
 	int grab_view_width, grab_view_height;
 	uint32_t resize_edges;
 	bool swallow_left_release;
+	/** Prevent a consumed Logo keybind from leaking into the next pointer press as Super+drag. */
+	bool suppress_logo_pointer_drag;
 	/** Touch→pointer emulation: `touch_pointer_emu` is true for the active `touch_pointer_emu_id` contact. */
 	bool touch_pointer_emu;
 	int32_t touch_pointer_emu_id;

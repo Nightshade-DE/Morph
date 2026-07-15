@@ -114,6 +114,8 @@ static void cursor_constrain(struct comp_server *server, struct wlr_pointer_cons
 static void apply_pointer_motion(struct comp_server *server, struct wlr_input_device *dev,
 								 uint32_t time_msec, double dx, double dy, double dx_unaccel, double dy_unaccel);
 static void pointer_constraint_handle_commit(struct wl_listener *listener, void *data);
+static void cancel_active_grab(struct comp_server *server);
+static void clear_keyboard_focus(struct comp_server *server);
 static void begin_move(struct comp_server *server, struct comp_toplevel *view, bool swallow_left_release);
 static bool toplevel_can_direct_resize(struct comp_server *server, struct comp_toplevel *view);
 static bool toplevel_get_hit_box(struct comp_toplevel *view, struct wlr_box *out);
@@ -246,8 +248,7 @@ static void toplevel_set_minimized(struct comp_toplevel *view, bool minimized)
 	view->minimized = minimized;
 	if (minimized && view->server->focused_toplevel == view)
 	{
-		view->server->focused_toplevel = NULL;
-		wlr_seat_keyboard_notify_clear_focus(view->server->seat);
+		clear_keyboard_focus(view->server);
 	}
 	server_workspace_apply_visibility(view->server);
 	if ((view->server->layout == COMP_LAYOUT_TILE || view->server->layout == COMP_LAYOUT_SCROLL) &&
@@ -1606,14 +1607,11 @@ static void toplevel_unmap(struct wl_listener *listener, void *data)
 	struct comp_toplevel *view = wl_container_of(listener, view, unmap);
 	if (view->server->focused_toplevel == view)
 	{
-		view->server->focused_toplevel = NULL;
-		wlr_seat_keyboard_notify_clear_focus(view->server->seat);
+		clear_keyboard_focus(view->server);
 	}
 	if (view->server->grabbed_toplevel == view)
 	{
-		view->server->grabbed_toplevel = NULL;
-		view->server->grab = COMP_GRAB_NONE;
-		view->server->swallow_left_release = false;
+		cancel_active_grab(view->server);
 	}
 	if ((view->server->layout == COMP_LAYOUT_TILE || view->server->layout == COMP_LAYOUT_SCROLL) &&
 		view->server->grab != COMP_GRAB_MOVE)
@@ -1668,13 +1666,11 @@ static void toplevel_destroy(struct wl_listener *listener, void *data)
 	}
 	if (view->server->focused_toplevel == view)
 	{
-		view->server->focused_toplevel = NULL;
+		clear_keyboard_focus(view->server);
 	}
 	if (view->server->grabbed_toplevel == view)
 	{
-		view->server->grabbed_toplevel = NULL;
-		view->server->grab = COMP_GRAB_NONE;
-		view->server->swallow_left_release = false;
+		cancel_active_grab(view->server);
 	}
 	struct comp_server *srv = view->server;
 	free(view);
@@ -1782,8 +1778,17 @@ static void toplevel_map(struct wl_listener *listener, void *data)
 /** Begin interactive move grab for a view. */
 static void toplevel_request_move(struct wl_listener *listener, void *data)
 {
-	(void)data;
 	struct comp_toplevel *view = wl_container_of(listener, view, request_move);
+	struct wlr_xdg_toplevel_move_event *ev = data;
+	if (!view->server->seat || view->server->seat->pointer_state.button_count != 1)
+	{
+		return;
+	}
+	if (!ev || !ev->seat || ev->seat->seat != view->server->seat ||
+		!wlr_seat_validate_pointer_grab_serial(view->server->seat, NULL, ev->serial))
+	{
+		return;
+	}
 	begin_move(view->server, view, false);
 }
 
@@ -1795,6 +1800,15 @@ static void toplevel_request_resize(struct wl_listener *listener, void *data)
 	struct comp_server *server = view->server;
 
 	if (!toplevel_can_direct_resize(server, view))
+	{
+		return;
+	}
+	if (!server->seat || server->seat->pointer_state.button_count != 1)
+	{
+		return;
+	}
+	if (!ev || !ev->seat || ev->seat->seat != server->seat ||
+		!wlr_seat_validate_pointer_grab_serial(server->seat, NULL, ev->serial))
 	{
 		return;
 	}
@@ -1817,6 +1831,12 @@ static void toplevel_apply_requested_maximize(struct comp_toplevel *view)
 	{
 		/* Some clients request maximize before first commit; configuring here would assert in wlroots. */
 		return;
+	}
+	if (view->server->grabbed_toplevel == view)
+	{
+		/* Title-bar double click often arrives as move initiation followed by maximize.
+		 * Drop the stale move grab first so later pointer motion does not keep dragging the window. */
+		cancel_active_grab(view->server);
 	}
 	const bool want_max = view->xdg_toplevel->requested.maximized;
 	const bool was_max = view->xdg_toplevel->current.maximized;
@@ -1893,6 +1913,10 @@ static void toplevel_request_fullscreen(struct wl_listener *listener, void *data
 	if (!toplevel_surface_initialized(view))
 	{
 		return;
+	}
+	if (view->server->grabbed_toplevel == view)
+	{
+		cancel_active_grab(view->server);
 	}
 	const bool want_fullscreen = view->xdg_toplevel->requested.fullscreen;
 	wlr_xdg_toplevel_set_fullscreen(view->xdg_toplevel, want_fullscreen);
@@ -2096,6 +2120,12 @@ static void focus_toplevel(struct comp_server *server, struct comp_toplevel *top
 	{
 		return;
 	}
+	if (server->grab != COMP_GRAB_NONE && server->grabbed_toplevel != toplevel)
+	{
+		/* A compositor-side move or resize must never survive a real focus handoff,
+		 * otherwise later pointer motion keeps driving the old client after a new map/focus. */
+		cancel_active_grab(server);
+	}
 	struct comp_toplevel *prev = server->focused_toplevel;
 	if (prev == toplevel)
 	{
@@ -2133,6 +2163,44 @@ static void focus_toplevel(struct comp_server *server, struct comp_toplevel *top
 	{
 		wlr_seat_keyboard_notify_enter(seat, surf, NULL, 0, NULL);
 	}
+}
+
+/** Drop compositor-managed move/resize state so the next pointer event re-evaluates ownership cleanly. */
+static void cancel_active_grab(struct comp_server *server)
+{
+	if (!server || server->grab == COMP_GRAB_NONE)
+	{
+		return;
+	}
+	struct comp_toplevel *grabbed = server->grabbed_toplevel;
+	const bool rearrange = server->grab == COMP_GRAB_MOVE &&
+						   (server->layout == COMP_LAYOUT_TILE || server->layout == COMP_LAYOUT_SCROLL) &&
+						   grabbed && !grabbed->tile_float;
+	server->grab = COMP_GRAB_NONE;
+	server->grabbed_toplevel = NULL;
+	server->resize_edges = 0;
+	server->swallow_left_release = false;
+	if (rearrange)
+	{
+		server_arrange_toplevels(server);
+	}
+}
+
+/** Clear keyboard focus and compositor activation state together so empty-root clicks leave no stale focus. */
+static void clear_keyboard_focus(struct comp_server *server)
+{
+	if (!server || !server->seat)
+	{
+		return;
+	}
+	struct comp_toplevel *prev = server->focused_toplevel;
+	if (prev && toplevel_surface_initialized(prev))
+	{
+		toplevel_set_activated(prev, false);
+		foreign_toplevel_refresh(prev);
+	}
+	server->focused_toplevel = NULL;
+	wlr_seat_keyboard_notify_clear_focus(server->seat);
 }
 
 /** Start move grab and capture cursor/view origin for delta-based motion. */
@@ -2547,8 +2615,7 @@ void server_workspace_go(struct comp_server *server, int idx)
 	}
 	if (server->focused_toplevel && server->focused_toplevel->workspace != server->current_workspace)
 	{
-		server->focused_toplevel = NULL;
-		wlr_seat_keyboard_notify_clear_focus(server->seat);
+		clear_keyboard_focus(server);
 	}
 	struct comp_toplevel *pick = NULL;
 	wl_list_for_each(t, &server->toplevels, link)
@@ -2624,8 +2691,7 @@ void server_workspace_move_focused(struct comp_server *server, int target)
 		}
 		else
 		{
-			server->focused_toplevel = NULL;
-			wlr_seat_keyboard_notify_clear_focus(server->seat);
+			clear_keyboard_focus(server);
 		}
 	}
 	server_workspace_apply_visibility(server);
@@ -3571,6 +3637,10 @@ static void keyboard_handle_key(struct wl_listener *listener, void *data)
 	wlr_keyboard_notify_key(wlr_kbd, event);
 	if (pressed && comp_config_try_bindings(kbd->server->config, kbd->server, pressed, mods_filtered, sym))
 	{
+		if (mods_filtered & WLR_MODIFIER_LOGO)
+		{
+			kbd->server->suppress_logo_pointer_drag = true;
+		}
 		keyboard_key_dispatch_depth--;
 		return;
 	}
@@ -3590,6 +3660,10 @@ static void keyboard_handle_modifiers(struct wl_listener *listener, void *data)
 	struct wlr_keyboard *wlr_kbd = wlr_keyboard_from_input_device(kbd->dev);
 	wlr_seat_set_keyboard(kbd->server->seat, wlr_kbd);
 	wlr_seat_keyboard_notify_modifiers(kbd->server->seat, &wlr_kbd->modifiers);
+	if ((wlr_kbd->modifiers.depressed & WLR_MODIFIER_LOGO) == 0)
+	{
+		kbd->server->suppress_logo_pointer_drag = false;
+	}
 }
 
 /** Resolve configured output name to current wlroots output object. */
@@ -4582,6 +4656,13 @@ static void process_cursor_motion(struct comp_server *server, uint32_t time_msec
 
 	if (server->grab == COMP_GRAB_MOVE && server->grabbed_toplevel)
 	{
+		if (server->seat->pointer_state.button_count == 0)
+		{
+			cancel_active_grab(server);
+		}
+	}
+	if (server->grab == COMP_GRAB_MOVE && server->grabbed_toplevel)
+	{
 		struct comp_toplevel *v = server->grabbed_toplevel;
 		double dx = server->cursor->x - server->grab_cursor_x;
 		double dy = server->cursor->y - server->grab_cursor_y;
@@ -4763,12 +4844,19 @@ static void server_cursor_button(struct wl_listener *listener, void *data)
 	{
 		return;
 	}
+	if (ev->state == WL_POINTER_BUTTON_STATE_PRESSED && server->grab != COMP_GRAB_NONE &&
+		server->seat->pointer_state.button_count == 0)
+	{
+		/* A missed release can leave the compositor in move/resize mode before the
+		 * next click. Clear it here so title-bar controls receive a normal press. */
+		cancel_active_grab(server);
+	}
 
 	uint32_t mods = 0;
 	struct wlr_keyboard *kbd = wlr_seat_get_keyboard(server->seat);
 	if (kbd)
 	{
-		mods = wlr_keyboard_get_modifiers(kbd);
+		mods = kbd->modifiers.depressed;
 	}
 
 	if (ev->state == WL_POINTER_BUTTON_STATE_RELEASED && server->grab != COMP_GRAB_NONE)
@@ -4807,7 +4895,7 @@ static void server_cursor_button(struct wl_listener *listener, void *data)
 	}
 
 	if (ev->state == WL_POINTER_BUTTON_STATE_PRESSED && ev->button == BTN_LEFT &&
-		(mods & WLR_MODIFIER_LOGO))
+		(mods & WLR_MODIFIER_LOGO) && !server->suppress_logo_pointer_drag)
 	{
 		double sx, sy;
 		struct comp_toplevel *v = toplevel_at(server, server->cursor->x, server->cursor->y, &sx, &sy);
@@ -4843,6 +4931,10 @@ static void server_cursor_button(struct wl_listener *listener, void *data)
 		else
 		{
 			layer_surface_try_keyboard_focus_click(server, server->cursor->x, server->cursor->y);
+			if (!surface_at(server, server->cursor->x, server->cursor->y, NULL, NULL))
+			{
+				clear_keyboard_focus(server);
+			}
 		}
 	}
 
