@@ -10,7 +10,7 @@ release/debug modes, and crash logging paths.
 Key paths
 ---------
 Project root: <your_local_repo>/morph
-Binary:       <your_local_repo>/morph/build/morph
+Binary:       <your_local_repo>/morph/build_dbg/morph
 Launcher:     <your_local_repo>/morph/testing/morph-session_dbg
 Runtime wrapper: /usr/local/bin/morph-session (or your package prefix bindir)
 Env file:     <your_local_repo>/morph/testing/config/environment

@@ -668,6 +668,25 @@ EOF
     trap - EXIT HUP INT TERM
 }
 
+test_launcher_defaults_to_debug_binary() {
+    tmpdir=$(make_tmpdir)
+    trap 'rm -rf "$tmpdir"' EXIT HUP INT TERM
+
+    mkdir -p "$tmpdir/state"
+
+    env -u DISPLAY -u WAYLAND_DISPLAY \
+        XDG_STATE_HOME="$tmpdir/state" \
+        MORPH_RESOLVE_ONLY=1 \
+        "$repo_root/testing/morph-session_dbg"
+
+    assert_file_contains \
+        "$(launcher_startup_log_path "$tmpdir/state/morph")" \
+        "Compositor binary:            $repo_root/build_dbg/morph"
+
+    rm -rf "$tmpdir"
+    trap - EXIT HUP INT TERM
+}
+
 test_production_wrapper_resolves_system_config_with_repo_overrides() {
     tmpdir=$(make_tmpdir)
     trap 'rm -rf "$tmpdir"' EXIT HUP INT TERM
@@ -751,6 +770,7 @@ test_launcher_uses_system_config_when_user_config_is_missing
 test_launcher_fails_when_no_config_exists
 test_launcher_can_opt_into_builtin_fallback
 test_launcher_restores_caller_environment_over_file_layers
+test_launcher_defaults_to_debug_binary
 test_production_wrapper_resolves_system_config_with_repo_overrides
 test_meson_install_manifest_lists_runtime_artifacts
 test_system_uninstall_prints_manifest_without_removing

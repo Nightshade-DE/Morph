@@ -13,7 +13,7 @@ session behavior and log inspection with `rg`.
 Key paths
 ---------
 Project root:   <your_local_repo>/morph
-Binary:         <your_local_repo>/morph/build/morph
+Binary:         <your_local_repo>/morph/build_dbg/morph
 Dev launcher:   <your_local_repo>/morph/testing/morph-session_dbg
 Runtime wrapper: morph-session
 Dev wrapper:    /usr/local/bin/morph-session_dbg

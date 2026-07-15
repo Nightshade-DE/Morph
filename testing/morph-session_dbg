@@ -22,7 +22,7 @@ export COMP_ROOT_DIR
 MORPH_SYSTEM_HOOK_DIR_DEFAULT="$COMP_ROOT_DIR/scripts"
 MORPH_SYSTEM_CONFIG_DIR_DEFAULT="$COMP_ROOT_DIR/testing/config"
 MORPH_SYSTEM_CONFIG_FILE_DEFAULT="$COMP_ROOT_DIR/testing/config/morph.conf"
-MORPH_BIN_DEFAULT="$COMP_ROOT_DIR/build/morph"
+MORPH_BIN_DEFAULT="$COMP_ROOT_DIR/build_dbg/morph"
 
 # Capture one caller-provided value so sourced environment files cannot silently
 # override the highest-priority layer.

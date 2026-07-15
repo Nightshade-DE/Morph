@@ -42,7 +42,7 @@ Both wrappers keep the same managed hook model around **Morph**:
 
 ### Development launcher: [`testing/morph-session_dbg`](../testing/morph-session_dbg)
 
-- uses repository-local defaults such as `./build/morph`
+- uses repository-local debug defaults such as `./build_dbg/morph`
 - prefers repository files under `config/` and `testing/`
 - is the wrapper used by the automated shell-runtime tests
 - is the best starting point for local nested/native smoke checks during development
