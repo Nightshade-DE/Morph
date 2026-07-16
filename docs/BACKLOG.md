@@ -8,6 +8,8 @@ This file tracks follow-up work that is still open after the current implementat
 - [Workspace architecture and scalability](#workspace-architecture-and-scalability)
 - [Layout modes and tiling controller follow-up](#layout-modes-and-tiling-controller-follow-up)
 - [Keybind config and shell-conditional follow-up](#keybind-config-and-shell-conditional-follow-up)
+- [Configurable focus policy](#configurable-focus-policy)
+- [Compositor input test coverage](#compositor-input-test-coverage)
 - [Plugin system and external control surface](#plugin-system-and-external-control-surface)
 - [Theming and desktop integration follow-up](#theming-and-desktop-integration-follow-up)
 
@@ -105,6 +107,51 @@ Relevant implementation points:
 - [ ] Decide whether further actions are still missing in practice, or whether the current action surface is already sufficient for the intended workflow.
 - [ ] Only add caching or alternate execution strategies for `when=` if real-world latency becomes measurable; the current design is explicit and easy to reason about.
 - [ ] Keep the trusted-shell execution model documented clearly if the bind system grows further, so convenience additions do not obscure the security model.
+
+# ----------------------------------------------------------------------------
+# Configurable focus policy
+# ----------------------------------------------------------------------------
+
+## Current State
+
+Morph currently behaves as a click-to-focus compositor: clicking a toplevel gives it keyboard focus, and clicking empty root space clears toplevel focus. This default should stay stable before adding configurable alternatives.
+
+Relevant implementation points:
+
+- [`src/main.c:2110`](../src/main.c#L2110) activates the focused toplevel and forwards keyboard focus to its root surface.
+- [`src/main.c:4827`](../src/main.c#L4827) handles pointer button focus handoff for toplevel clicks.
+- [`src/main.c:4923`](../src/main.c#L4923) clears keyboard focus when a click lands on empty root space.
+- [`docs/CONFIG.md`](CONFIG.md) currently has no focus policy config option.
+
+## What Still Needs Work
+
+- [x] Default click-to-focus behavior exists for normal toplevel clicks and root-click focus clearing. Source: [`src/main.c:4827`](../src/main.c#L4827), [`src/main.c:4923`](../src/main.c#L4923)
+- [ ] Add a config option for `ClickToFocus` as the explicit default policy.
+- [ ] Add `FocusFollowsMouse`: pointer enter gives keyboard focus to that window, and pointer leave to root clears focus.
+- [ ] Add `SloppyFocus`: pointer enter gives keyboard focus, but passing over root space does not clear focus until another focus target is selected.
+- [ ] Define how focus policies interact with layer-shell surfaces, root clicks, compositor-owned move/resize grabs, and future server-side decorations before exposing them in `docs/CONFIG.md`.
+
+# ----------------------------------------------------------------------------
+# Compositor input test coverage
+# ----------------------------------------------------------------------------
+
+## Current State
+
+Morph has automated coverage for config parsing and shell runtime behavior, but compositor input behavior is still validated mostly through manual nested/native session checks. Bugs around keybind-consumed modifier state, pointer grabs, titlebar controls, and click-to-focus currently require a real wlroots seat to reproduce accurately.
+
+Relevant implementation points:
+
+- [`src/main.c:3577`](../src/main.c#L3577) handles keyboard key events and compositor keybind consumption.
+- [`src/main.c:4827`](../src/main.c#L4827) handles pointer buttons, focus handoff, and compositor-owned move/resize grabs.
+- [`tests/test_config.c`](../tests/test_config.c) covers config behavior.
+- [`tests/test_shell_runtime.sh`](../tests/test_shell_runtime.sh) covers launcher and shell-runtime behavior.
+
+## What Still Needs Work
+
+- [x] Config and shell-runtime behavior have automated tests. Source: [`tests/test_config.c`](../tests/test_config.c), [`tests/test_shell_runtime.sh`](../tests/test_shell_runtime.sh)
+- [ ] Add focused C tests for helper-level input state where practical, especially consumed modifier suppression after compositor-handled Logo keybinds.
+- [ ] Consider extracting small pure helpers from keyboard/pointer handling only when it gives stable tests without hiding wlroots seat semantics.
+- [ ] Keep full focus, titlebar, pointer grab, and click-to-focus scenarios in the manual nested/native test plan until Morph has a real compositor input harness.
 
 # ----------------------------------------------------------------------------
 # Plugin system and external control surface
