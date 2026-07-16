@@ -1,6 +1,6 @@
 # Wayland protocols and desktop integration in **Morph**
 
-This document lists what **Morph** exposes today, what **wlroots** adds through its helper functions, and what is still missing. It is based on [`src/main.c`](src/main.c), [`meson.build`](meson.build), and wlroots 0.19 behavior.
+This document lists what **Morph** exposes today, what **wlroots** adds through its helper functions, and what is still missing. It is based on [`src/main.c`](../src/main.c), [`meson.build`](../meson.build), and wlroots 0.19 behavior.
 
 **Important distinction:** **xdg-desktop-portal** (settings, file chooser, screen cast, and similar features) talks to implementations over **D-Bus** and, for some features, expects the **Wayland compositor** to expose specific **Wayland protocol** extensions. **Morph** exposes a **moderate** set of globals for tiling, panels, capture, and games; several desktop and portal features still need more protocols or session services.
 
@@ -19,7 +19,7 @@ These `wlr_*_create` calls register the corresponding **Wayland globals** (names
 | **`zxdg_output_manager_v1`** (xdg-output-unstable) | `wlr_xdg_output_manager_v1_create(dpy, output_layout)` | Logical output geometry for clients (e.g. **waybar**). |
 | **`zwlr_screencopy_manager_v1`** (wlr-screencopy-unstable) | `wlr_screencopy_manager_v1_create(dpy)` | Screen capture (**grim**, some recorders). Uses **`wlr_scene_output`** commit path. |
 | **`xdg_wm_base`** (XDG shell) | `wlr_xdg_shell_create(dpy, 3)` | Version **3**. Toplevels; **xdg popups** (menus, tooltips) are added to the scene graph and unconstrained in `main.c`. |
-| **`ext_workspace_manager_v1`** (staging **ext-workspace-v1**) | `wl_global_create` + [`src/ext_workspace.c`](src/ext_workspace.c) | Nine fixed workspaces; **`activate`** switches desktop; **`state`** + **`done`** for bars (e.g. **waybar** `ext/workspaces`). No create/remove/assign. |
+| **`ext_workspace_manager_v1`** (staging **ext-workspace-v1**) | `wl_global_create` + [`src/ext_workspace.c`](../src/ext_workspace.c) | Nine fixed workspaces; **`activate`** switches desktop; **`state`** + **`done`** for bars (e.g. **waybar** `ext/workspaces`). No create/remove/assign. |
 | **`zxdg_decoration_manager_v1`** (xdg-decoration-unstable-v1) | `wlr_xdg_decoration_manager_v1_create(dpy)` | Client vs server-side decorations; morph picks mode per layout / tile-float / config. |
 | **`zwlr_layer_shell_v1`** (wlr-layer-shell unstable) | `wlr_layer_shell_v1_create(dpy, 4)` | Panels, wallpapers, overlays via **`wlr_scene_layer_surface_v1`**. Exclusive zones → per-output **`layer_workarea`**. Layer popups handled like toplevel popups. |
 | **`zwlr_foreign_toplevel_manager_v1`** | `wlr_foreign_toplevel_manager_v1_create(dpy)` | Window list state for bars / switchers that use foreign-toplevel. |
@@ -125,7 +125,7 @@ Each addition needs new globals (often `wayland-protocols` or wlroots unstable h
 
 ---
 
-The [**`wlr-layer-shell-unstable-v1.xml`**](protocols/wlr-layer-shell-unstable-v1.xml) file under **`protocols/`** is a vendored copy (for `wayland-scanner`); it tracks upstream **wlr-protocols**.
+The [**`wlr-layer-shell-unstable-v1.xml`**](../protocols/wlr-layer-shell-unstable-v1.xml) file under **`protocols/`** is a vendored copy (for `wayland-scanner`); it tracks upstream **wlr-protocols**.
 
 ## See also
 

@@ -95,7 +95,7 @@ This roadmap applies to branch `feature/install-and-user-setup`, which starts fr
   - [x] `config/shutdown.sh` is the optional user shutdown hook
   - [x] `scripts/system_shutdown.sh` is the managed cleanup runtime that must still run after the user hook
 - [x] The current dev flow now uses managed hook dispatch instead of direct user-hook execution:
-  - [x] `testing/morph-session_dbg` exports [`MORPH_MANAGED_HOOKS=1`](docs/ENVIRONMENT.md#morph-managed-hooks)
+  - [x] `testing/morph-session_dbg` exports [`MORPH_MANAGED_HOOKS=1`](../ENVIRONMENT.md#morph-managed-hooks)
   - [x] the binary then dispatches `scripts/system_startup.sh` and `scripts/system_shutdown.sh`
   - [x] configured user hooks remain in the config and are only run from the managed runtime in the intended order
 - [x] Portal handling is now encapsulated as its own managed runtime building block:
@@ -257,13 +257,13 @@ This roadmap applies to branch `feature/install-and-user-setup`, which starts fr
   - [x] user environment
   - [x] system environment
   - [x] wrapper defaults
-- [x] Decide whether the binary itself should know `/etc/morph/morph.conf` or whether the wrapper sets [`MORPH_CONFIG`](docs/ENVIRONMENT.md#morph-config).
+- [x] Decide whether the binary itself should know `/etc/morph/morph.conf` or whether the wrapper sets [`MORPH_CONFIG`](../ENVIRONMENT.md#morph-config).
 - [x] Ensure system defaults act as a base and user overrides layer on top.
 
 - [x] The binary now knows `/etc/morph/morph.conf` as the final default search path.
-- [x] The dev launcher now treats [`MORPH_CONFIG`](docs/ENVIRONMENT.md#morph-config) as the canonical config override variable.
+- [x] The dev launcher now treats [`MORPH_CONFIG`](../ENVIRONMENT.md#morph-config) as the canonical config override variable.
 - [x] Missing or unreadable config files now raise an explicit error instead of triggering a silent start without a config.
-- [x] An explicit compatibility switch (`--allow-builtin-fallback` or [`MORPH_ALLOW_BUILTIN_FALLBACK=1`](docs/ENVIRONMENT.md#morph-allow-builtin-fallback)) can re-enable the old builtin fallback when needed.
+- [x] An explicit compatibility switch (`--allow-builtin-fallback` or [`MORPH_ALLOW_BUILTIN_FALLBACK=1`](../ENVIRONMENT.md#morph-allow-builtin-fallback)) can re-enable the old builtin fallback when needed.
 
 ### 8. Installation Strategy
 
@@ -314,11 +314,11 @@ This roadmap applies to branch `feature/install-and-user-setup`, which starts fr
 ## Open Design Questions
 
 - [x] Only prepare the final runtime wrapper name in this branch; handle the actual rename to `morph` later.
-  - [x] The runtime binary, session wrapper, desktop files, config paths, and user-facing [`MORPH_*`](docs/ENVIRONMENT.md#launcher-variables) variables now use the `morph` name.
+  - [x] The runtime binary, session wrapper, desktop files, config paths, and user-facing [`MORPH_*`](../ENVIRONMENT.md#launcher-variables) variables now use the `morph` name.
 - [x] Decide whether `config` and `environment` resolution stays purely in shell/wrapper logic or moves partially into the binary.
   - [x] `morph.conf` and its default search paths stay in the binary because the config is the compositor-facing interface.
   - [x] `environment` files and their priority chain stay in the wrapper/shell layer because they belong to session orchestration and runtime variable setup.
-  - [x] The binary may continue to consume prepared environment variables such as `XKB_DEFAULT_*` and [`MORPH_DEBUG_XDG`](docs/ENVIRONMENT.md#morph-debug-xdg), but it should not resolve `environment` files itself.
+  - [x] The binary may continue to consume prepared environment variables such as `XKB_DEFAULT_*` and [`MORPH_DEBUG_XDG`](../ENVIRONMENT.md#morph-debug-xdg), but it should not resolve `environment` files itself.
 - [x] Decide how much user hooks need to be constrained so the managed lifecycle remains robust.
   - [x] User hooks stay flexible and may be used both through the session wrapper and directly with the binary.
   - [x] The managed startup, reload, and shutdown frame remains mandatory and cannot be disabled by hook selection alone.
