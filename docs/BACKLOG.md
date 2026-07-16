@@ -7,6 +7,7 @@ This file tracks follow-up work that is still open after the current implementat
 - [Server-side decorations for Java and native Wayland windows](#server-side-decorations-for-java-and-native-wayland-windows)
 - [Workspace architecture and scalability](#workspace-architecture-and-scalability)
 - [Layout modes and tiling controller follow-up](#layout-modes-and-tiling-controller-follow-up)
+- [Compositor-owned UI foundation](#compositor-owned-ui-foundation)
 - [Keybind config and shell-conditional follow-up](#keybind-config-and-shell-conditional-follow-up)
 - [Configurable focus policy](#configurable-focus-policy)
 - [Compositor input test coverage](#compositor-input-test-coverage)
@@ -82,6 +83,29 @@ Relevant implementation points:
 - [ ] Decide whether additional layout modes such as monocle or a richer workspace-local float mode are actually needed, instead of keeping the current three-mode model stable.
 - [ ] If more layout modes are added later, keep the current tile and scroll movement semantics coherent instead of creating action drift across layouts.
 - [ ] Revisit floating overrides only if real use cases show that the current tile-float behavior is too limited.
+
+# ----------------------------------------------------------------------------
+# Compositor-owned UI foundation
+# ----------------------------------------------------------------------------
+
+## Current State
+
+Morph already has compositor-owned input handling, scene graph usage, and some compositor-controlled chrome-adjacent behavior such as decoration policy selection, titlebar hit handling, and layout-driven raise/focus decisions. What it does not have yet is a reusable compositor-owned UI layer for overlays, popups, switchers, menus, or future SSD chrome.
+
+Relevant implementation points:
+
+- [`src/main.c:2108`](../src/main.c#L2108) already centralizes keyboard focus handoff for toplevels.
+- [`src/main.c:4827`](../src/main.c#L4827) already centralizes pointer-button focus handoff and compositor-owned grab behavior.
+- [`src/main.c:623`](../src/main.c#L623) and related scene helpers already perform compositor-side hit testing.
+- [`docs/roadmaps/Roadmap_compositor-ui.de.md`](roadmaps/Roadmap_compositor-ui.de.md) now captures the intended shared UI direction for WinList, root menus, and later SSD titlebars.
+
+## What Still Needs Work
+
+- [ ] Build a small reusable compositor-owned UI foundation before implementing multiple one-off UI features independently.
+- [ ] Use that shared UI layer first for WinList / `Alt-Tab` / `Alt-Shift-Tab`, then for root menus, and only after that for SSD titlebars and other compositor-owned chrome.
+- [ ] Add a real WindowList / MRU structure separate from `server->toplevels`, since the existing toplevel list is not a focus-history model.
+- [ ] Keep the root-menu DSL and registry work separate from the shared popup/overlay runtime so menus do not become the implicit UI foundation for everything else.
+- [ ] Revisit theme integration later so compositor-owned UI can eventually align with client-side styling where practical, without making GTK/Qt a hard dependency for the first implementation.
 
 # ----------------------------------------------------------------------------
 # Keybind config and shell-conditional follow-up

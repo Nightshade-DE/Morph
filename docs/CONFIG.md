@@ -13,15 +13,15 @@ This file documents the **INI-style** configuration read at compositor startup. 
 
 If no file is found, startup stops with a log message instead of silently continuing without a config. You can opt into the built-in fallback behavior with **`--allow-builtin-fallback`** or **[`MORPH_ALLOW_BUILTIN_FALLBACK=1`](ENVIRONMENT.md#morph-allow-builtin-fallback)**. If the file exists but defines **no** `[bind]` entries, **built-in binds** are still generated as a compatibility fallback.
 
-A starting point for your own file is **`morph.conf.example`** in this repository.
+A starting point for your own file is **[`morph.conf.example`](morph.conf.example)** in this repository.
 
 ---
 
-## Launcher environment (morph_run)
+## Launcher environment ([morph-session_dbg](../testing/morph-session_dbg))
 
 Further launcher details are documented in:
 
-- `docs/LAUNCHER.md`
+- [`docs/LAUNCHER.md`](LAUNCHER.md)
 
 This keeps `docs/CONFIG.md` focused on INI syntax and behavior.
 

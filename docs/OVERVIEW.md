@@ -54,7 +54,7 @@ This section is intentionally more detailed than the root [`README.md`](../READM
 |    |└─ [`startup.sh`](../config/startup.sh) | Runtime user startup hook template. See [`Startup Hook Resolution`](LAUNCHER.md#startup-hook-resolution) in `docs/LAUNCHER.md`. |
 |└─ [`docs/`](.) | Project and developer documentation. ||
 |    |└─ [`OVERVIEW.md`](OVERVIEW.md) | Central reading guide, repository map, and managed session flow entry point. |
-|    |└─ [`LAUNCHER.md`](LAUNCHER.md) | Shared wrapper behavior for [`morph_run`](../testing/morph-session_dbg) and [`morph-session`](../scripts/morph-session). |
+|    |└─ [`LAUNCHER.md`](LAUNCHER.md) | Shared wrapper behavior for [`morph-session_dbg`](../testing/morph-session_dbg) and [`morph-session`](../scripts/morph-session). |
 |    |└─ [`ENVIRONMENT.md`](ENVIRONMENT.md) | Runtime environment variables, environment-layer behavior, and XKB notes. |
 |    |└─ [`CLI.md`](CLI.md) | Binary command-line flags and IPC-aware runtime control behavior. |
 |    |└─ [`CONFIG.md`](CONFIG.md) | Overview of **Morph** config format, sections, and behavior. |
@@ -88,14 +88,14 @@ This section is intentionally more detailed than the root [`README.md`](../READM
 |    |└─ [`morph_dbg.desktop`](../sessions/morph_dbg.desktop) | Development desktop file for local repo testing through a display manager. |
 | [`src/`](../src/) | **Morph** compositor source code. ||
 | [`testing/`](../testing/) | Manual tests, launchers, and dev-only runtime files. See [`docs/TESTING.md`](TESTING.md). ||
-|    |└─ [`config/`](../testing/config/) | Development-only copies used by [`morph_run`](../testing/morph-session_dbg) and [`dev-install.sh`](../scripts/dev-install.sh) so the dev flow stays separate from release runtime files. |
-|    |   └─ [`morph.conf`](../testing/config/morph.conf) | Development base config for [`morph_run`](../testing/morph-session_dbg) and `dev-install.sh`. |
-|    |   └─ [`environment`](../testing/config/environment) | Development environment file used by [`morph_run`](../testing/morph-session_dbg). |
-|    |   └─ [`portals`](../testing/config/portals) | Development managed portal file used by [`morph_run`](../testing/morph-session_dbg). |
+|    |└─ [`config/`](../testing/config/) | Development-only copies used by [`morph-session_dbg`](../testing/morph-session_dbg) and [`dev-install.sh`](../scripts/dev-install.sh) so the dev flow stays separate from release runtime files. |
+|    |   └─ [`morph.conf`](../testing/config/morph.conf) | Development base config for [`morph-session_dbg`](../testing/morph-session_dbg) and `dev-install.sh`. |
+|    |   └─ [`environment`](../testing/config/environment) | Development environment file used by [`morph-session_dbg`](../testing/morph-session_dbg). |
+|    |   └─ [`portals`](../testing/config/portals) | Development managed portal file used by [`morph-session_dbg`](../testing/morph-session_dbg). |
 |    |   └─ [`startup.sh`](../testing/config/startup.sh) | Development user startup hook template for dev installs. |
 |    |   └─ [`reload.sh`](../testing/config/reload.sh) | Development user reload hook template for dev installs. |
 |    |   └─ [`shutdown.sh`](../testing/config/shutdown.sh) | Development user shutdown hook template for dev installs. |
-|    |└─ [`morph_run`](../testing/morph-session_dbg) | **Morph** main development startup script. See [`Wrapper Roles`](LAUNCHER.md#wrapper-roles) in `docs/LAUNCHER.md`. |
+|    |└─ [`morph-session_dbg`](../testing/morph-session_dbg) | **Morph** main development startup script. See [`Wrapper Roles`](LAUNCHER.md#wrapper-roles) in `docs/LAUNCHER.md`. |
 |    |└─ [`test-howto_start-variants.nfo`](../testing/test-howto_start-variants.nfo) | Practical native/nested startup variants and focused launcher checks. |
 |    |└─ [`testplan-manual-morph.nfo`](../testing/testplan-manual-morph.nfo) | Broader manual lifecycle, install, uninstall, hook, and fallback test plan. |
 | [`tests/`](../tests/) | Automation tests for the compositor and shell runtime behavior. See [`docs/TESTS.md`](TESTS.md). ||
