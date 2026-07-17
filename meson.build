@@ -18,6 +18,7 @@ cc = meson.get_compiler('c')
 m_dep = cc.find_library('m', required: false)
 
 wlroots = dependency('wlroots-0.19')
+libinput = dependency('libinput')
 pixman = dependency('pixman-1')
 wayland_server = dependency('wayland-server')
 xkbcommon = dependency('xkbcommon')
@@ -98,7 +99,7 @@ executable(
   tablet_v2_server_h,
   tablet_v2_private_c,
   pointer_constraints_server_h,
-  dependencies: [wlroots, pixman, wayland_server, xkbcommon, m_dep],
+  dependencies: [wlroots, libinput, pixman, wayland_server, xkbcommon, m_dep],
   install: true,
   install_dir: morph_bindir,
 )

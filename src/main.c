@@ -20,6 +20,7 @@
 #include <unistd.h>
 #include <wayland-server-core.h>
 #include <wlr/backend.h>
+#include <wlr/backend/libinput.h>
 #include <wlr/interfaces/wlr_keyboard.h>
 #include <wlr/render/allocator.h>
 #include <wlr/render/wlr_renderer.h>
@@ -139,6 +140,7 @@ static void foreign_toplevel_sync_all(struct comp_server *server);
 static void server_update_seat_capabilities(struct comp_server *server);
 static void layer_surface_try_keyboard_focus_click(struct comp_server *server, double lx, double ly);
 static void track_input_device(struct comp_server *server, struct wlr_input_device *dev);
+static void input_device_apply_libinput_defaults(struct wlr_input_device *dev);
 static struct comp_tablet *comp_tablet_from_wlr(struct comp_server *server, struct wlr_tablet *wt);
 static struct comp_tablet_tool *tablet_tool_get_or_create(struct comp_server *srv, struct comp_tablet *tab,
 														  struct wlr_tablet_tool *wtool);
@@ -4263,6 +4265,30 @@ static void server_cursor_touch_frame(struct wl_listener *listener, void *data)
 	wlr_seat_touch_notify_frame(server->seat);
 }
 
+/** Apply compositor defaults for libinput-backed touchpads without affecting other devices. */
+static void input_device_apply_libinput_defaults(struct wlr_input_device *dev)
+{
+	if (!dev || !wlr_input_device_is_libinput(dev))
+	{
+		return;
+	}
+	struct libinput_device *lid = wlr_libinput_get_device_handle(dev);
+	if (!lid || libinput_device_config_tap_get_finger_count(lid) <= 0)
+	{
+		return;
+	}
+	const enum libinput_config_status tap_status =
+		libinput_device_config_tap_set_enabled(lid, LIBINPUT_CONFIG_TAP_ENABLED);
+	if (tap_status != LIBINPUT_CONFIG_STATUS_SUCCESS)
+	{
+		wlr_log(WLR_INFO, "libinput: tap-to-click enable unsupported for %s", dev->name);
+		return;
+	}
+	(void)libinput_device_config_tap_set_drag_enabled(lid, LIBINPUT_CONFIG_DRAG_ENABLED);
+	(void)libinput_device_config_tap_set_button_map(lid, LIBINPUT_CONFIG_TAP_MAP_LRM);
+	wlr_log(WLR_INFO, "libinput: enabled tap-to-click for %s", dev->name);
+}
+
 /** new_input callback: initialize device-specific handlers and seat integration. */
 static void server_new_input(struct wl_listener *listener, void *data)
 {
@@ -4355,6 +4381,7 @@ static void server_new_input(struct wl_listener *listener, void *data)
 		break;
 	}
 	case WLR_INPUT_DEVICE_POINTER:
+		input_device_apply_libinput_defaults(dev);
 		wlr_cursor_attach_input_device(server->cursor, dev);
 		track_input_device(server, dev);
 		server_update_seat_capabilities(server);
@@ -4860,6 +4887,15 @@ static void server_cursor_button(struct wl_listener *listener, void *data)
 	if (kbd)
 	{
 		mods = kbd->modifiers.depressed;
+	}
+
+	if (ev->state == WL_POINTER_BUTTON_STATE_PRESSED && server->grab == COMP_GRAB_NONE)
+	{
+		/* Tap-to-click and some synthetic pointer sources can deliver a button press
+		 * without any preceding motion event. Refresh pointer focus from the current
+		 * cursor position first so the press is dispatched to the surface actually
+		 * under the pointer instead of a stale previous target. */
+		process_cursor_motion(server, ev->time_msec);
 	}
 
 	if (ev->state == WL_POINTER_BUTTON_STATE_RELEASED && server->grab != COMP_GRAB_NONE)
