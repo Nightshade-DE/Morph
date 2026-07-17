@@ -47,8 +47,8 @@
 # ==============================================================================
 
 # Launch a panel such as yambar or waybar.
-launch sfwbar
-log_startup INFO "Started sfwbar."
+#launch sfwbar
+#log_startup INFO "Started sfwbar."
 #launch waybar -c ./config/waybar-morph.jsonc -s ./config/waybar-morph.css
 #log_startup INFO "Started waybar."
 
