@@ -30,6 +30,7 @@ struct wlr_layer_shell_v1;
 struct wlr_layer_surface_v1;
 struct wlr_scene_layer_surface_v1;
 struct wlr_xdg_output_manager_v1;
+struct wlr_xdg_activation_v1;
 struct wlr_screencopy_manager_v1;
 struct wlr_foreign_toplevel_manager_v1;
 struct wlr_foreign_toplevel_handle_v1;
@@ -187,6 +188,8 @@ struct comp_server
 	struct wlr_primary_selection_v1_device_manager *primary_selection_mgr;
 	struct wlr_output_layout *output_layout;
 	struct wlr_xdg_output_manager_v1 *xdg_output_manager;
+	/** Routes launcher/notification activation tokens into the compositor's focus policy. */
+	struct wlr_xdg_activation_v1 *xdg_activation;
 	struct wlr_screencopy_manager_v1 *screencopy_manager;
 	struct wlr_foreign_toplevel_manager_v1 *foreign_toplevel_manager;
 	struct wlr_pointer_constraints_v1 *pointer_constraints;
@@ -213,6 +216,8 @@ struct comp_server
 	struct wl_listener new_output;
 	struct wl_listener new_input;
 	struct wl_listener xdg_shell_new_toplevel;
+	/** Handles xdg-activation focus requests after wlroots validates the token. */
+	struct wl_listener xdg_activation_request_activate;
 	struct wlr_xdg_decoration_manager_v1 *xdg_decoration_manager;
 	struct wl_listener new_xdg_decoration;
 	struct wl_listener cursor_motion;

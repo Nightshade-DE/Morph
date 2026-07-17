@@ -18,6 +18,7 @@ These `wlr_*_create` calls register the corresponding **Wayland globals** (names
 | **`zwp_primary_selection_device_manager_v1`** | `wlr_primary_selection_v1_device_manager_create` | Primary selection support for select-to-copy / middle-click paste; ownership is wired from the seat’s `request_set_primary_selection`. |
 | **`wl_output`** | Via **backend** / output layout | Physical outputs; layout uses `wlr_output_layout` + `wlr_scene_attach_output_layout`. |
 | **`zxdg_output_manager_v1`** (xdg-output-unstable) | `wlr_xdg_output_manager_v1_create(dpy, output_layout)` | Logical output geometry for clients (e.g. **waybar**). |
+| **`xdg_activation_v1`** | `wlr_xdg_activation_v1_create(dpy)` | Launcher / notification activation tokens; morph maps requests onto existing workspace and focus policy. |
 | **`zwlr_screencopy_manager_v1`** (wlr-screencopy-unstable) | `wlr_screencopy_manager_v1_create(dpy)` | Screen capture (**grim**, some recorders). Uses **`wlr_scene_output`** commit path. |
 | **`xdg_wm_base`** (XDG shell) | `wlr_xdg_shell_create(dpy, 3)` | Version **3**. Toplevels; **xdg popups** (menus, tooltips) are added to the scene graph and unconstrained in `main.c`. |
 | **`ext_workspace_manager_v1`** (staging **ext-workspace-v1**) | `wl_global_create` + [`src/ext_workspace.c`](../src/ext_workspace.c) | Nine fixed workspaces; **`activate`** switches desktop; **`state`** + **`done`** for bars (e.g. **waybar** `ext/workspaces`). No create/remove/assign. |
@@ -32,7 +33,7 @@ These `wlr_*_create` calls register the corresponding **Wayland globals** (names
 | **`wp_viewporter`** | `wlr_viewporter_create(dpy)` | Required for **xwayland-satellite** (X11 → XDG bridge). |
 | **X11 (via satellite)** | `xwayland-satellite` child process | Not in-process Xwayland; **Morph** spawns satellite after startup and sets `DISPLAY`. |
 
-**Not created anywhere in this repo:** output management, export-dmabuf, gamma control, idle/keyboard-shortcuts inhibit, text-input/input-method, xdg-activation, fractional-scale (explicit global), cursor-shape (wp), presentation-time, security-context, virtual keyboard/pointer, etc.
+**Not created anywhere in this repo:** output management, export-dmabuf, gamma control, idle/keyboard-shortcuts inhibit, text-input/input-method, fractional-scale (explicit global), cursor-shape (wp), presentation-time, security-context, virtual keyboard/pointer, etc.
 
 ---
 
@@ -100,7 +101,6 @@ A working portal still needs **`xdg-desktop-portal`** plus a backend such as **x
 
 **Medium**
 
-- **xdg-activation** — notification / launcher focus routing.
 - **Idle inhibit** — prevent dim during video.
 - **Fractional scale** — HiDPI blur on some clients.
 - **export-dmabuf** — some portal/OBS capture paths.
@@ -116,9 +116,8 @@ A working portal still needs **`xdg-desktop-portal`** plus a backend such as **x
 
 1. **Text input / input method** — IME users.
 2. **Keyboard shortcuts inhibit** — fullscreen apps.
-3. **xdg-activation** — focus from notifications.
-4. **Fractional scale** — HiDPI clarity.
-5. **Idle inhibit** — presentations / video.
+3. **Fractional scale** — HiDPI clarity.
+4. **Idle inhibit** — presentations / video.
 
 Each addition needs new globals (often `wayland-protocols` or wlroots unstable headers) and event wiring; portal features also need the **portal service** in the session.
 

@@ -34,6 +34,7 @@
 #include <wlr/types/wlr_pointer.h>
 #include <wlr/types/wlr_primary_selection.h>
 #include <wlr/types/wlr_primary_selection_v1.h>
+#include <wlr/types/wlr_xdg_activation_v1.h>
 #include <wlr/types/wlr_foreign_toplevel_management_v1.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_tablet_tool.h>
@@ -179,6 +180,7 @@ static void server_detach_global_listeners(struct comp_server *server)
 	detach_listener_if_linked(&server->new_output);
 	detach_listener_if_linked(&server->new_input);
 	detach_listener_if_linked(&server->xdg_shell_new_toplevel);
+	detach_listener_if_linked(&server->xdg_activation_request_activate);
 	detach_listener_if_linked(&server->new_xdg_decoration);
 	detach_listener_if_linked(&server->layer_shell_new_surface);
 
@@ -1398,6 +1400,50 @@ static void foreign_toplevel_handle_request_activate(struct wl_listener *listene
 	}
 	focus_toplevel(view->server, view);
 	foreign_toplevel_sync_all(view->server);
+}
+
+/**
+ * Handle xdg-activation focus requests from launchers and notifications.
+ *
+ * wlroots validates the token and emits this request once the target surface is
+ * known. Morph intentionally reuses the same workspace/minimize/focus rules as
+ * foreign-toplevel activation so launcher-driven focus changes stay consistent
+ * with user-visible task switching.
+ */
+static void xdg_activation_handle_request_activate(struct wl_listener *listener, void *data)
+{
+	struct comp_server *server = wl_container_of(listener, server, xdg_activation_request_activate);
+	struct wlr_xdg_activation_v1_request_activate_event *ev = data;
+	if (!server || !ev || !ev->surface)
+	{
+		return;
+	}
+	/* Reject tokens minted for a different seat so one seat cannot steal focus from another. */
+	if (ev->token && ev->token->seat && ev->token->seat != server->seat)
+	{
+		return;
+	}
+	/* Activation may target a subsurface or popup; resolve to the root toplevel surface first. */
+	struct wlr_surface *root = wlr_surface_get_root_surface(ev->surface);
+	struct comp_toplevel *view;
+	wl_list_for_each(view, &server->toplevels, link)
+	{
+		if (!view->xdg_toplevel || view->xdg_toplevel->base->surface != root || !toplevel_surface_mapped(view))
+		{
+			continue;
+		}
+		if (view->workspace != server->current_workspace)
+		{
+			server_workspace_go(server, view->workspace);
+		}
+		if (view->minimized)
+		{
+			toplevel_set_minimized(view, false);
+		}
+		focus_toplevel(server, view);
+		foreign_toplevel_sync_all(server);
+		return;
+	}
 }
 
 /** Handle foreign-toplevel close requests for Wayland and Xwayland clients. */
@@ -4265,7 +4311,14 @@ static void server_cursor_touch_frame(struct wl_listener *listener, void *data)
 	wlr_seat_touch_notify_frame(server->seat);
 }
 
-/** Apply compositor defaults for libinput-backed touchpads without affecting other devices. */
+/**
+ * Apply Morph's default libinput touchpad policy to a newly discovered device.
+ *
+ * Tap-to-click is handled entirely by libinput, so wlroots only exposes it when
+ * the compositor opts in on each touchpad. Restricting this to libinput-backed
+ * touchpads keeps mice, trackpoints, tablets, and other devices on their native
+ * behavior.
+ */
 static void input_device_apply_libinput_defaults(struct wlr_input_device *dev)
 {
 	if (!dev || !wlr_input_device_is_libinput(dev))
@@ -4277,6 +4330,7 @@ static void input_device_apply_libinput_defaults(struct wlr_input_device *dev)
 	{
 		return;
 	}
+	/* A device may expose libinput without supporting tap; log and leave it untouched in that case. */
 	const enum libinput_config_status tap_status =
 		libinput_device_config_tap_set_enabled(lid, LIBINPUT_CONFIG_TAP_ENABLED);
 	if (tap_status != LIBINPUT_CONFIG_STATUS_SUCCESS)
@@ -4284,6 +4338,7 @@ static void input_device_apply_libinput_defaults(struct wlr_input_device *dev)
 		wlr_log(WLR_INFO, "libinput: tap-to-click enable unsupported for %s", dev->name);
 		return;
 	}
+	/* Keep libinput's tap drag and left/right/middle mapping aligned with regular button behavior. */
 	(void)libinput_device_config_tap_set_drag_enabled(lid, LIBINPUT_CONFIG_DRAG_ENABLED);
 	(void)libinput_device_config_tap_set_button_map(lid, LIBINPUT_CONFIG_TAP_MAP_LRM);
 	wlr_log(WLR_INFO, "libinput: enabled tap-to-click for %s", dev->name);
@@ -5129,6 +5184,13 @@ bool server_init(struct comp_server *server)
 	{
 		return false;
 	}
+	/* Needed so launchers and Xwayland bridges can hand focus to newly created windows. */
+	server->xdg_activation = wlr_xdg_activation_v1_create(dpy);
+	if (!server->xdg_activation)
+	{
+		wlr_log(WLR_ERROR, "Failed to create wlr_xdg_activation_v1");
+		return false;
+	}
 
 	server->screencopy_manager = wlr_screencopy_manager_v1_create(dpy);
 	if (!server->screencopy_manager)
@@ -5181,6 +5243,10 @@ bool server_init(struct comp_server *server)
 	wl_signal_add(&server->backend->events.new_input, &server->new_input);
 	server->xdg_shell_new_toplevel.notify = xdg_shell_new_toplevel;
 	wl_signal_add(&server->xdg_shell->events.new_toplevel, &server->xdg_shell_new_toplevel);
+	/* Wire xdg-activation after the global exists so token-backed requests can reuse Morph focus rules. */
+	server->xdg_activation_request_activate.notify = xdg_activation_handle_request_activate;
+	wl_signal_add(&server->xdg_activation->events.request_activate,
+				  &server->xdg_activation_request_activate);
 
 	server->xdg_decoration_manager = wlr_xdg_decoration_manager_v1_create(dpy);
 	if (!server->xdg_decoration_manager)
