@@ -135,6 +135,7 @@ static struct comp_toplevel **tile_sorted_views(struct comp_server *server, size
 static int tile_sorted_index(struct comp_toplevel **arr, size_t n, struct comp_toplevel *v);
 static void toplevel_apply_decoration_mode(struct comp_toplevel *view);
 static void toplevel_apply_requested_maximize(struct comp_toplevel *view);
+static struct comp_output *toplevel_preferred_output(struct comp_toplevel *view);
 static struct comp_output *toplevel_tile_output(struct comp_toplevel *t);
 static void foreign_toplevel_refresh(struct comp_toplevel *view);
 static void foreign_toplevel_sync_all(struct comp_server *server);
@@ -455,6 +456,25 @@ static struct comp_output *comp_output_from_wlr(struct comp_server *server, stru
 	return NULL;
 }
 
+/** Pick the most plausible output for stack/floating placement and maximized workarea sizing. */
+static struct comp_output *toplevel_preferred_output(struct comp_toplevel *view)
+{
+	struct comp_server *server = view->server;
+	const struct wlr_box *geo = &view->xdg_toplevel->base->geometry;
+	const double cx = (double)view->scene_tree->node.x + (double)geo->width * 0.5;
+	const double cy = (double)view->scene_tree->node.y + (double)geo->height * 0.5;
+	struct wlr_output *out = wlr_output_layout_output_at(server->output_layout, cx, cy);
+	if (!out)
+	{
+		out = wlr_output_layout_output_at(server->output_layout, server->cursor->x, server->cursor->y);
+	}
+	if (!out)
+	{
+		out = primary_wlr_output(server);
+	}
+	return comp_output_from_wlr(server, out);
+}
+
 /** Push current title/app_id/activation metadata to foreign-toplevel clients. */
 static void foreign_toplevel_refresh(struct comp_toplevel *view)
 {
@@ -750,6 +770,24 @@ static void layer_shell_arrange(struct comp_server *server)
 			}
 		}
 		out->layer_workarea = usable;
+	}
+	struct comp_toplevel *view;
+	wl_list_for_each(view, &server->toplevels, link)
+	{
+		if (!toplevel_surface_mapped(view) || !toplevel_surface_initialized(view))
+		{
+			continue;
+		}
+		if (!view->xdg_toplevel->current.maximized && !view->xdg_toplevel->requested.maximized)
+		{
+			continue;
+		}
+		if (server->layout != COMP_LAYOUT_STACK && !view->tile_float)
+		{
+			continue;
+		}
+		/* Layer exclusive zones redefine the target workarea for maximized stack/floating windows. */
+		toplevel_apply_requested_maximize(view);
 	}
 	server_workspace_apply_visibility(server);
 	if ((server->layout == COMP_LAYOUT_TILE || server->layout == COMP_LAYOUT_SCROLL) &&
@@ -1796,6 +1834,10 @@ static void toplevel_map(struct wl_listener *listener, void *data)
 	if (view->xdg_toplevel->requested.maximized)
 	{
 		toplevel_apply_requested_maximize(view);
+		focus_toplevel(view->server, view);
+		server_workspace_apply_visibility(view->server);
+		server_sync_xdg_decorations(view->server);
+		return;
 	}
 	if (view->server->layout == COMP_LAYOUT_TILE || view->server->layout == COMP_LAYOUT_SCROLL)
 	{
@@ -1911,17 +1953,11 @@ static void toplevel_apply_requested_maximize(struct comp_toplevel *view)
 			}
 			view->has_restore = true;
 		}
-		struct wlr_output *out = wlr_output_layout_output_at(
-			view->server->output_layout, view->server->cursor->x, view->server->cursor->y);
 		struct wlr_box obox = {0, 0, 800, 600};
-		struct comp_output *co = comp_output_from_wlr(view->server, out);
+		struct comp_output *co = toplevel_preferred_output(view);
 		if (co)
 		{
 			obox = co->layer_workarea;
-		}
-		else if (out)
-		{
-			wlr_output_layout_get_box(view->server->output_layout, out, &obox);
 		}
 		wlr_xdg_toplevel_set_size(view->xdg_toplevel, obox.width, obox.height);
 		if (view->server->layout == COMP_LAYOUT_STACK || view->tile_float)

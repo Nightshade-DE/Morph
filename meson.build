@@ -18,7 +18,7 @@ cc = meson.get_compiler('c')
 m_dep = cc.find_library('m', required: false)
 
 wlroots = dependency('wlroots-0.19')
-/* Needed for compositor-side touchpad defaults such as tap-to-click. */
+# Needed for compositor-side touchpad defaults such as tap-to-click.
 libinput = dependency('libinput')
 pixman = dependency('pixman-1')
 wayland_server = dependency('wayland-server')
