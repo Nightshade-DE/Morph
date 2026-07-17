@@ -12,6 +12,7 @@ struct wlr_compositor;
 struct wlr_input_device;
 struct wlr_cursor;
 struct wlr_data_device_manager;
+struct wlr_primary_selection_v1_device_manager;
 struct wlr_output;
 struct wlr_output_layout;
 struct wlr_renderer;
@@ -183,6 +184,7 @@ struct comp_server
 	struct wlr_viewporter *viewporter;
 	struct wlr_subcompositor *subcompositor;
 	struct wlr_data_device_manager *data_device_mgr;
+	struct wlr_primary_selection_v1_device_manager *primary_selection_mgr;
 	struct wlr_output_layout *output_layout;
 	struct wlr_xdg_output_manager_v1 *xdg_output_manager;
 	struct wlr_screencopy_manager_v1 *screencopy_manager;
@@ -220,6 +222,7 @@ struct comp_server
 	struct wl_listener cursor_frame;
 	struct wl_listener seat_request_cursor;
 	struct wl_listener seat_request_set_selection;
+	struct wl_listener seat_request_set_primary_selection;
 	struct wl_listener seat_pointer_focus_change;
 	struct wl_listener new_pointer_constraint;
 	struct wl_listener pointer_constraint_commit;

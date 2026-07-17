@@ -14,7 +14,8 @@ These `wlr_*_create` calls register the corresponding **Wayland globals** (names
 |------------------------------|-------------|--------|
 | **`wl_compositor`** | `wlr_compositor_create(dpy, 6, …)` | Version **6**. Surfaces and buffer attachment. |
 | **`wl_subcompositor`** | `wlr_subcompositor_create` | Subsurfaces. |
-| **`wl_data_device_manager`** | `wlr_data_device_manager_create` | Clipboard and drag-and-drop plumbing; selection is wired from the seat’s `request_set_selection`. |
+| **`wl_data_device_manager`** | `wlr_data_device_manager_create` | Clipboard and drag-and-drop plumbing; regular clipboard selection is wired from the seat’s `request_set_selection`. |
+| **`zwp_primary_selection_device_manager_v1`** | `wlr_primary_selection_v1_device_manager_create` | Primary selection support for select-to-copy / middle-click paste; ownership is wired from the seat’s `request_set_primary_selection`. |
 | **`wl_output`** | Via **backend** / output layout | Physical outputs; layout uses `wlr_output_layout` + `wlr_scene_attach_output_layout`. |
 | **`zxdg_output_manager_v1`** (xdg-output-unstable) | `wlr_xdg_output_manager_v1_create(dpy, output_layout)` | Logical output geometry for clients (e.g. **waybar**). |
 | **`zwlr_screencopy_manager_v1`** (wlr-screencopy-unstable) | `wlr_screencopy_manager_v1_create(dpy)` | Screen capture (**grim**, some recorders). Uses **`wlr_scene_output`** commit path. |
@@ -31,7 +32,7 @@ These `wlr_*_create` calls register the corresponding **Wayland globals** (names
 | **`wp_viewporter`** | `wlr_viewporter_create(dpy)` | Required for **xwayland-satellite** (X11 → XDG bridge). |
 | **X11 (via satellite)** | `xwayland-satellite` child process | Not in-process Xwayland; **Morph** spawns satellite after startup and sets `DISPLAY`. |
 
-**Not created anywhere in this repo:** primary selection, output management, export-dmabuf, gamma control, idle/keyboard-shortcuts inhibit, text-input/input-method, xdg-activation, fractional-scale (explicit global), cursor-shape (wp), presentation-time, security-context, virtual keyboard/pointer, etc.
+**Not created anywhere in this repo:** output management, export-dmabuf, gamma control, idle/keyboard-shortcuts inhibit, text-input/input-method, xdg-activation, fractional-scale (explicit global), cursor-shape (wp), presentation-time, security-context, virtual keyboard/pointer, etc.
 
 ---
 
@@ -52,7 +53,7 @@ From the seat and cursor wiring in `main.c`:
 - **Touch:** down/up/motion/cancel/frame when touch devices are present (with pointer emulation fallback).
 - **Tablet v2:** proximity, motion, tip, buttons.
 - **Clipboard:** `request_set_selection` → `wlr_seat_set_selection` (regular clipboard).
-- **Primary selection:** **not** wired (no `wlr_primary_selection_v1` / middle-click paste).
+- **Primary selection:** `request_set_primary_selection` → `wlr_seat_set_primary_selection` (select-to-copy / middle-click paste).
 
 ---
 
@@ -84,7 +85,7 @@ A working portal still needs **`xdg-desktop-portal`** plus a backend such as **x
 
 ### Implemented (directly or via wlroots)
 
-- **Core:** compositor, subcompositor, SHM/dmabuf (via renderer), outputs, seat (pointer/keyboard/touch), data device manager.
+- **Core:** compositor, subcompositor, SHM/dmabuf (via renderer), outputs, seat (pointer/keyboard/touch), data device manager, primary selection.
 - **Shell:** XDG shell (toplevels + popups), xdg-output, wlr-layer-shell, foreign-toplevel, ext-workspace.
 - **Input extras:** pointer constraints, relative pointer, tablet-v2; X11 via xwayland-satellite.
 - **Decoration / capture:** xdg-decoration, screencopy.
@@ -96,7 +97,6 @@ A working portal still needs **`xdg-desktop-portal`** plus a backend such as **x
 
 - **Text input / input method** — fcitx/ibus, CJK.
 - **Keyboard shortcuts inhibit** — fullscreen games/browsers.
-- **Primary selection** — middle-click paste.
 
 **Medium**
 
@@ -114,12 +114,11 @@ A working portal still needs **`xdg-desktop-portal`** plus a backend such as **x
 
 ### Suggested order for further work
 
-1. **Primary selection** — middle-click paste.
-2. **Text input / input method** — IME users.
-3. **Keyboard shortcuts inhibit** — fullscreen apps.
-4. **xdg-activation** — focus from notifications.
-5. **Fractional scale** — HiDPI clarity.
-6. **Idle inhibit** — presentations / video.
+1. **Text input / input method** — IME users.
+2. **Keyboard shortcuts inhibit** — fullscreen apps.
+3. **xdg-activation** — focus from notifications.
+4. **Fractional scale** — HiDPI clarity.
+5. **Idle inhibit** — presentations / video.
 
 Each addition needs new globals (often `wayland-protocols` or wlroots unstable headers) and event wiring; portal features also need the **portal service** in the session.
 

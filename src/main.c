@@ -31,6 +31,8 @@
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_pointer.h>
+#include <wlr/types/wlr_primary_selection.h>
+#include <wlr/types/wlr_primary_selection_v1.h>
 #include <wlr/types/wlr_foreign_toplevel_management_v1.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_tablet_tool.h>
@@ -197,6 +199,7 @@ static void server_detach_global_listeners(struct comp_server *server)
 	/* Seat/protocol control hooks: cursor requests, selection ownership, and pointer constraints. */
 	detach_listener_if_linked(&server->seat_request_cursor);
 	detach_listener_if_linked(&server->seat_request_set_selection);
+	detach_listener_if_linked(&server->seat_request_set_primary_selection);
 	detach_listener_if_linked(&server->seat_pointer_focus_change);
 	detach_listener_if_linked(&server->new_pointer_constraint);
 	detach_listener_if_linked(&server->pointer_constraint_commit);
@@ -5010,6 +5013,18 @@ static void seat_request_set_selection(struct wl_listener *listener, void *data)
 	wlr_seat_set_selection(server->seat, ev->source, ev->serial);
 }
 
+/** Seat request_set_primary_selection callback: route primary selection ownership. */
+static void seat_request_set_primary_selection(struct wl_listener *listener, void *data)
+{
+	struct comp_server *server = wl_container_of(listener, server, seat_request_set_primary_selection);
+	if (!server->seat || server->display_terminate_requested)
+	{
+		return;
+	}
+	struct wlr_seat_request_set_primary_selection_event *ev = data;
+	wlr_seat_set_primary_selection(server->seat, ev->source, ev->serial);
+}
+
 /** Backend destroy callback: terminate the Wayland event loop on backend teardown. */
 static void server_backend_destroy(struct wl_listener *listener, void *data)
 {
@@ -5066,6 +5081,12 @@ bool server_init(struct comp_server *server)
 	}
 	server->subcompositor = wlr_subcompositor_create(dpy);
 	server->data_device_mgr = wlr_data_device_manager_create(dpy);
+	server->primary_selection_mgr = wlr_primary_selection_v1_device_manager_create(dpy);
+	if (!server->primary_selection_mgr)
+	{
+		wlr_log(WLR_ERROR, "Failed to create wlr_primary_selection_v1_device_manager");
+		return false;
+	}
 	server->output_layout = wlr_output_layout_create(dpy);
 	server->xdg_output_manager = wlr_xdg_output_manager_v1_create(dpy, server->output_layout);
 	if (!server->xdg_output_manager)
@@ -5194,6 +5215,9 @@ bool server_init(struct comp_server *server)
 	wl_signal_add(&server->seat->events.request_set_cursor, &server->seat_request_cursor);
 	server->seat_request_set_selection.notify = seat_request_set_selection;
 	wl_signal_add(&server->seat->events.request_set_selection, &server->seat_request_set_selection);
+	server->seat_request_set_primary_selection.notify = seat_request_set_primary_selection;
+	wl_signal_add(&server->seat->events.request_set_primary_selection,
+				  &server->seat_request_set_primary_selection);
 	server->seat_pointer_focus_change.notify = seat_pointer_focus_change;
 	wl_signal_add(&server->seat->pointer_state.events.focus_change, &server->seat_pointer_focus_change);
 	server->new_pointer_constraint.notify = handle_new_pointer_constraint;
