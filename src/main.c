@@ -488,11 +488,17 @@ static void log_xdg_state(const char *tag, struct comp_toplevel *view)
 	struct wlr_xdg_toplevel *toplevel = view->xdg_toplevel;
 	struct wlr_xdg_toplevel *parent = toplevel->parent;
 	const struct wlr_box *geo = &xdg->geometry;
+	struct wlr_box extents = {0};
+	if (xdg->surface)
+	{
+		wlr_surface_get_extents(xdg->surface, &extents);
+	}
 	const int surf_w = xdg->surface ? xdg->surface->current.width : 0;
 	const int surf_h = xdg->surface ? xdg->surface->current.height : 0;
 	wlr_log(WLR_INFO,
 			"xdgdbg:%s app_id='%s' title='%s' mapped=%d initialized=%d initial_commit=%d layout=%d "
-			"scene=%d,%d geo=%d,%d %dx%d surf=%dx%d parent=%d parent_app_id='%s' parent_title='%s' "
+			"scene=%d,%d geo=%d,%d %dx%d surf=%dx%d ext=%d,%d %dx%d "
+			"parent=%d parent_app_id='%s' parent_title='%s' "
 			"constraints_cur=min:%dx%d,max:%dx%d constraints_pending=min:%dx%d,max:%dx%d",
 			tag,
 			toplevel->app_id ? toplevel->app_id : "",
@@ -501,6 +507,7 @@ static void log_xdg_state(const char *tag, struct comp_toplevel *view)
 			view->scene_tree ? view->scene_tree->node.x : 0,
 			view->scene_tree ? view->scene_tree->node.y : 0,
 			geo->x, geo->y, geo->width, geo->height, surf_w, surf_h,
+			extents.x, extents.y, extents.width, extents.height,
 			parent ? 1 : 0,
 			parent && parent->app_id ? parent->app_id : "",
 			parent && parent->title ? parent->title : "",
@@ -519,10 +526,16 @@ static void log_resize_state(const char *tag, struct comp_toplevel *view, int x,
 		return;
 	}
 	const struct wlr_box *geo = &view->xdg_toplevel->base->geometry;
-	const struct wlr_surface *surf = view->xdg_toplevel->base->surface;
+	struct wlr_surface *surf = view->xdg_toplevel->base->surface;
+	struct wlr_box extents = {0};
+	if (surf)
+	{
+		wlr_surface_get_extents(surf, &extents);
+	}
 	wlr_log(WLR_INFO,
 			"resizedbg:%s app_id='%s' title='%s' target=%d,%d %dx%d edges=0x%x scene=%d,%d "
-			"geo=%d,%d %dx%d surf=%dx%d parent=%d fallback=%d constraints_cur=min:%dx%d,max:%dx%d "
+			"geo=%d,%d %dx%d surf=%dx%d ext=%d,%d %dx%d parent=%d fallback=%d "
+			"constraints_cur=min:%dx%d,max:%dx%d "
 			"constraints_pending=min:%dx%d,max:%dx%d resizing_cur=%d resizing_pending=%d "
 			"configure_cur=%u configure_pending=%u",
 			tag,
@@ -533,6 +546,7 @@ static void log_resize_state(const char *tag, struct comp_toplevel *view, int x,
 			view->scene_tree ? view->scene_tree->node.y : 0,
 			geo->x, geo->y, geo->width, geo->height,
 			surf ? surf->current.width : 0, surf ? surf->current.height : 0,
+			extents.x, extents.y, extents.width, extents.height,
 			view->xdg_toplevel->parent ? 1 : 0,
 			toplevel_needs_compositor_resize_fallback(view) ? 1 : 0,
 			view->xdg_toplevel->current.min_width, view->xdg_toplevel->current.min_height,
@@ -2619,9 +2633,9 @@ static bool toplevel_needs_compositor_resize_fallback(struct comp_toplevel *view
  * Resolve the visible frame used to arm compositor-owned resize edges.
  *
  * xwayland-satellite reports its synthetic titlebar through negative XDG geometry while
- * pointer input remains aligned to the base surface. Using that geometry for hit-testing
- * shifts the top and bottom resize zones by exactly the titlebar height. Keep XDG geometry
- * for configure sizes, but use the mapped surface extents for this bridge-only hitbox.
+ * its visible frame can extend beyond the base surface through subsurfaces. Keep XDG
+ * geometry for configure sizes, but use the complete mapped surface extents for this
+ * bridge-only hitbox so resize edges follow the frame that was actually drawn.
  */
 static bool toplevel_get_resize_hit_box(struct comp_toplevel *view, struct wlr_box *out)
 {
@@ -2634,18 +2648,15 @@ static bool toplevel_get_resize_hit_box(struct comp_toplevel *view, struct wlr_b
 		return true;
 	}
 
-	const struct wlr_surface *surface = view->xdg_toplevel->base->surface;
-	const struct wlr_box geometry = view->xdg_toplevel->base->geometry;
-	const bool geometry_outside_surface =
-		geometry.x < 0 || geometry.y < 0 ||
-		geometry.x + geometry.width > surface->current.width ||
-		geometry.y + geometry.height > surface->current.height;
-	if (geometry_outside_surface && surface->current.width > 0 && surface->current.height > 0)
+	struct wlr_surface *surface = view->xdg_toplevel->base->surface;
+	struct wlr_box extents = {0};
+	wlr_surface_get_extents(surface, &extents);
+	if (extents.width > 0 && extents.height > 0)
 	{
-		out->x = view->scene_tree->node.x;
-		out->y = view->scene_tree->node.y;
-		out->width = surface->current.width;
-		out->height = surface->current.height;
+		out->x = view->scene_tree->node.x + extents.x;
+		out->y = view->scene_tree->node.y + extents.y;
+		out->width = extents.width;
+		out->height = extents.height;
 	}
 	return true;
 }
@@ -2792,17 +2803,36 @@ static uint32_t toplevel_resize_edges_at(struct comp_toplevel *view, double cx, 
 	const bool compositor_fallback = toplevel_needs_compositor_resize_fallback(view);
 	const int border = compositor_fallback ? 6 : 1;
 	const double left = (double)box.x;
-	const double top = (double)box.y;
+	double top = (double)box.y;
 	const double right = left + (double)box.width;
-	const double bottom = top + (double)box.height;
 	/* Right/bottom cursor shapes often have a hotspot perceived a few px inward.
 	 * Shift detection slightly so visual edge alignment feels consistent. */
 	const double hotspot_comp = border >= 4 ? 2.0 : 0.0;
 	const double right_comp = hotspot_comp;
 	const double bottom_comp = 0.0;
+	double bottom = top + (double)box.height;
+	bool compact_bridge_frame = false;
+	if (compositor_fallback)
+	{
+		const struct wlr_xdg_surface *xdg = view->xdg_toplevel->base;
+		struct wlr_box extents = {0};
+		wlr_surface_get_extents(xdg->surface, &extents);
+		const int geometry_bottom = xdg->geometry.y + xdg->geometry.height;
+		const int extents_bottom = extents.y + extents.height;
+		if (xdg->geometry.y < 0 && extents_bottom <= geometry_bottom)
+		{
+			compact_bridge_frame = true;
+			/* Compact satellite frames expose the titlebar above the base surface but no
+			 * complete outer frame extents. Move the resize edges past that transparent
+			 * margin, unlike native CSD which reports its complete shadow extents. */
+			top += (double)(border * 2) + hotspot_comp;
+			bottom += (double)(border * 2) + hotspot_comp;
+		}
+	}
 
 	uint32_t edges = 0;
-	const bool within_y_band = cy >= top - (double)border && cy <= bottom + (double)border;
+	const double vertical_band_top = compact_bridge_frame ? top : top - (double)border;
+	const bool within_y_band = cy >= vertical_band_top && cy <= bottom + (double)border;
 	const bool within_x_band = cx >= left - (double)border && cx <= right + (double)border;
 
 	if (!compositor_fallback)
@@ -2841,7 +2871,7 @@ static uint32_t toplevel_resize_edges_at(struct comp_toplevel *view, double cx, 
 			edges |= WLR_EDGE_RIGHT;
 		}
 
-		if (within_x_band && cy >= top - (double)border && cy < top + (double)border)
+		if (within_x_band && cy >= vertical_band_top && cy < top + (double)border)
 		{
 			edges |= WLR_EDGE_TOP;
 		}
