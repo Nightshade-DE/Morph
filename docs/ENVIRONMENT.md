@@ -133,6 +133,20 @@ Optional verbose XDG lifecycle debug flag passed to **Morph**.
 
 Use this when debugging early xdg_toplevel requests/state transitions.
 
+<a id="morph-bridge-resize-hz"></a>
+### MORPH_BRIDGE_RESIZE_HZ
+
+Optional compatibility override for the interactive resize rate of legacy X11
+clients running through xwayland-satellite.
+
+- unset: use Morph's tested default of 17 Hz
+- integer `1` through `240`: override the resize frequency in hertz
+- invalid value: keep the default and emit an error in the Morph log
+
+Most users should leave this variable unset. It exists for diagnosing or tuning
+legacy toolkit clients that cannot keep up with unrestricted resize configure
+events. It does not change resize behavior for native Wayland clients.
+
 <a id="morph-managed-hooks"></a>
 ### MORPH_MANAGED_HOOKS
 

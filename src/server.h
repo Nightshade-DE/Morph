@@ -126,9 +126,18 @@ struct comp_toplevel
 	struct wl_listener request_maximize;
 	struct wl_listener request_fullscreen;
 	struct wl_listener request_minimize;
+	struct wl_listener set_parent;
 	struct wl_listener set_title;
 	struct wl_listener set_app_id;
 	struct wl_listener new_popup;
+	/** Latest compositor configure not yet observed in an acknowledged surface commit. */
+	uint32_t pending_configure_serial;
+	/** Fixed opposite edges used while left/top resize buffers are being committed. */
+	uint32_t resize_anchor_edges;
+	int resize_anchor_right;
+	int resize_anchor_bottom;
+	bool resize_anchor_active;
+	bool resize_anchor_finishing;
 	bool minimized;
 	int restore_x;
 	int restore_y;
@@ -251,6 +260,10 @@ struct comp_server
 	int grab_view_x, grab_view_y;
 	int grab_view_width, grab_view_height;
 	uint32_t resize_edges;
+	uint32_t resize_last_configure_msec;
+	int resize_pending_x, resize_pending_y;
+	int resize_pending_width, resize_pending_height;
+	bool resize_pending_valid;
 	bool swallow_left_release;
 	/** Prevent a consumed Logo keybind from leaking into the next pointer press as Super+drag. */
 	bool suppress_logo_pointer_drag;

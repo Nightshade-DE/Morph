@@ -123,6 +123,14 @@ static void clear_keyboard_focus(struct comp_server *server);
 static void begin_move(struct comp_server *server, struct comp_toplevel *view, bool swallow_left_release);
 static bool toplevel_can_direct_resize(struct comp_server *server, struct comp_toplevel *view);
 static bool toplevel_get_hit_box(struct comp_toplevel *view, struct wlr_box *out);
+static bool toplevel_get_resize_hit_box(struct comp_toplevel *view, struct wlr_box *out);
+static bool toplevel_uses_client_side_resize(struct comp_toplevel *view);
+static bool toplevel_needs_compositor_resize_fallback(struct comp_toplevel *view);
+static void toplevel_set_resizing(struct comp_toplevel *view, bool resizing);
+static void toplevel_constrain_resize(struct comp_toplevel *view, uint32_t edges,
+								  int *x, int *y, int *width, int *height);
+static void toplevel_update_resize_anchor(struct comp_toplevel *view);
+static void toplevel_apply_resize_box(struct comp_toplevel *view, int x, int y, int width, int height);
 static bool point_in_box(const struct wlr_box *box, double x, double y);
 static uint32_t toplevel_resize_edges_at(struct comp_toplevel *view, double sx, double sy);
 static uint32_t toplevel_resize_edges_at_cursor(struct comp_server *server, struct comp_toplevel *view);
@@ -229,6 +237,26 @@ static bool toplevel_surface_initialized(const struct comp_toplevel *v)
 	return v->xdg_toplevel && v->xdg_toplevel->base->initialized;
 }
 
+/** Remember the newest compositor configure so client commits can be matched to it. */
+static void toplevel_track_configure(struct comp_toplevel *view, uint32_t serial)
+{
+	if (view && serial != 0)
+	{
+		view->pending_configure_serial = serial;
+	}
+}
+
+/** Request an XDG size and retain its configure serial for commit reconciliation. */
+static void toplevel_set_size(struct comp_toplevel *view, int width, int height)
+{
+	if (!view || !view->xdg_toplevel)
+	{
+		return;
+	}
+	toplevel_track_configure(view,
+		wlr_xdg_toplevel_set_size(view->xdg_toplevel, width, height));
+}
+
 /** Extract normalized title/app fields for config/rule matching across backends. */
 static void toplevel_title_app_for_config(const struct comp_toplevel *v, const char **title_out,
 										  const char **app_out)
@@ -242,7 +270,8 @@ static void toplevel_set_activated(struct comp_toplevel *v, bool activated)
 {
 	if (v->xdg_toplevel)
 	{
-		wlr_xdg_toplevel_set_activated(v->xdg_toplevel, activated);
+		toplevel_track_configure(v,
+			wlr_xdg_toplevel_set_activated(v->xdg_toplevel, activated));
 	}
 }
 
@@ -274,7 +303,7 @@ static void toplevel_arrange_tile(struct comp_toplevel *v, int layout_x, int lay
 	(void)layout_y;
 	if (v->xdg_toplevel)
 	{
-		wlr_xdg_toplevel_set_size(v->xdg_toplevel, w, h);
+		toplevel_set_size(v, w, h);
 	}
 }
 
@@ -282,10 +311,36 @@ static void toplevel_arrange_tile(struct comp_toplevel *v, int layout_x, int lay
 static bool compositor_session_active;
 /** Verbose XDG lifecycle logs (off by default). Enable with `MORPH_DEBUG_XDG=1`. */
 static bool xdg_debug_logs_enabled;
+/** Pace legacy X11 bridge resizes so GTK2 can process ConfigureNotify without a backlog. */
+static uint32_t bridge_resize_interval_msec = 59;
 /** Optional append-only log target set by `--log-file`; NULL means stderr-only. */
 static FILE *morph_log_file;
 /** Active startup log threshold used by our callback for explicit filtering. */
 static enum wlr_log_importance morph_active_log_level = WLR_INFO;
+
+/** Apply an optional resize frequency override for legacy X11 bridge clients. */
+static void configure_bridge_resize_rate_from_env(void)
+{
+	const char *value = getenv("MORPH_BRIDGE_RESIZE_HZ");
+	if (!value || !value[0])
+	{
+		return;
+	}
+
+	errno = 0;
+	char *end = NULL;
+	const long hz = strtol(value, &end, 10);
+	if (errno == ERANGE || !end || *end || hz < 1 || hz > 240)
+	{
+		wlr_log(WLR_ERROR,
+			"Ignoring invalid MORPH_BRIDGE_RESIZE_HZ='%s' (expected 1..240)", value);
+		return;
+	}
+
+	bridge_resize_interval_msec = (uint32_t)((1000 + hz / 2) / hz);
+	wlr_log(WLR_INFO, "Legacy bridge resize rate: %ld Hz (%u ms)",
+		hz, bridge_resize_interval_msec);
+}
 
 /** Map wlroots importance to an ordered rank for deterministic threshold checks. */
 static int morph_log_level_rank(enum wlr_log_importance importance)
@@ -430,12 +485,95 @@ static void log_xdg_state(const char *tag, struct comp_toplevel *view)
 		return;
 	}
 	struct wlr_xdg_surface *xdg = view->xdg_toplevel->base;
+	struct wlr_xdg_toplevel *toplevel = view->xdg_toplevel;
+	struct wlr_xdg_toplevel *parent = toplevel->parent;
+	const struct wlr_box *geo = &xdg->geometry;
+	const int surf_w = xdg->surface ? xdg->surface->current.width : 0;
+	const int surf_h = xdg->surface ? xdg->surface->current.height : 0;
 	wlr_log(WLR_INFO,
-			"xdgdbg:%s app_id='%s' title='%s' mapped=%d initialized=%d initial_commit=%d layout=%d",
+			"xdgdbg:%s app_id='%s' title='%s' mapped=%d initialized=%d initial_commit=%d layout=%d "
+			"scene=%d,%d geo=%d,%d %dx%d surf=%dx%d parent=%d parent_app_id='%s' parent_title='%s' "
+			"constraints_cur=min:%dx%d,max:%dx%d constraints_pending=min:%dx%d,max:%dx%d",
+			tag,
+			toplevel->app_id ? toplevel->app_id : "",
+			toplevel->title ? toplevel->title : "",
+			xdg->surface->mapped, xdg->initialized, xdg->initial_commit, (int)view->server->layout,
+			view->scene_tree ? view->scene_tree->node.x : 0,
+			view->scene_tree ? view->scene_tree->node.y : 0,
+			geo->x, geo->y, geo->width, geo->height, surf_w, surf_h,
+			parent ? 1 : 0,
+			parent && parent->app_id ? parent->app_id : "",
+			parent && parent->title ? parent->title : "",
+			toplevel->current.min_width, toplevel->current.min_height,
+			toplevel->current.max_width, toplevel->current.max_height,
+			toplevel->pending.min_width, toplevel->pending.min_height,
+			toplevel->pending.max_width, toplevel->pending.max_height);
+}
+
+/** Optional verbose trace for compositor-owned interactive resize state. */
+static void log_resize_state(const char *tag, struct comp_toplevel *view, int x, int y, int w, int h,
+							 uint32_t edges)
+{
+	if (!xdg_debug_logs_enabled || !view || !view->xdg_toplevel || !view->xdg_toplevel->base)
+	{
+		return;
+	}
+	const struct wlr_box *geo = &view->xdg_toplevel->base->geometry;
+	const struct wlr_surface *surf = view->xdg_toplevel->base->surface;
+	wlr_log(WLR_INFO,
+			"resizedbg:%s app_id='%s' title='%s' target=%d,%d %dx%d edges=0x%x scene=%d,%d "
+			"geo=%d,%d %dx%d surf=%dx%d parent=%d fallback=%d constraints_cur=min:%dx%d,max:%dx%d "
+			"constraints_pending=min:%dx%d,max:%dx%d resizing_cur=%d resizing_pending=%d "
+			"configure_cur=%u configure_pending=%u",
 			tag,
 			view->xdg_toplevel->app_id ? view->xdg_toplevel->app_id : "",
 			view->xdg_toplevel->title ? view->xdg_toplevel->title : "",
-			xdg->surface->mapped, xdg->initialized, xdg->initial_commit, (int)view->server->layout);
+			x, y, w, h, edges,
+			view->scene_tree ? view->scene_tree->node.x : 0,
+			view->scene_tree ? view->scene_tree->node.y : 0,
+			geo->x, geo->y, geo->width, geo->height,
+			surf ? surf->current.width : 0, surf ? surf->current.height : 0,
+			view->xdg_toplevel->parent ? 1 : 0,
+			toplevel_needs_compositor_resize_fallback(view) ? 1 : 0,
+			view->xdg_toplevel->current.min_width, view->xdg_toplevel->current.min_height,
+			view->xdg_toplevel->current.max_width, view->xdg_toplevel->current.max_height,
+			view->xdg_toplevel->pending.min_width, view->xdg_toplevel->pending.min_height,
+			view->xdg_toplevel->pending.max_width, view->xdg_toplevel->pending.max_height,
+			view->xdg_toplevel->current.resizing ? 1 : 0,
+			view->xdg_toplevel->pending.resizing ? 1 : 0,
+			view->xdg_toplevel->base->current.configure_serial,
+			view->pending_configure_serial);
+}
+
+/** Log one line when a new xdg_toplevel enters Morph, including capability gating context. */
+static void log_new_toplevel_state(struct wlr_xdg_toplevel *xdg_toplevel, uint32_t shell_ver, bool wm_caps_enabled)
+{
+	if (!xdg_debug_logs_enabled || !xdg_toplevel || !xdg_toplevel->base)
+	{
+		return;
+	}
+	struct wlr_xdg_surface *xdg = xdg_toplevel->base;
+	struct wlr_xdg_toplevel *parent = xdg_toplevel->parent;
+	const struct wlr_box *geo = &xdg->geometry;
+	const struct wlr_surface *surf = xdg->surface;
+	wlr_log(WLR_INFO,
+			"xdgdbg:new_toplevel app_id='%s' title='%s' shell_v=%u wm_caps=%d "
+			"mapped=%d initialized=%d initial_commit=%d geo=%d,%d %dx%d surf=%dx%d "
+			"parent=%d parent_app_id='%s' parent_title='%s' "
+			"constraints_cur=min:%dx%d,max:%dx%d constraints_pending=min:%dx%d,max:%dx%d",
+			xdg_toplevel->app_id ? xdg_toplevel->app_id : "",
+			xdg_toplevel->title ? xdg_toplevel->title : "",
+			shell_ver, wm_caps_enabled ? 1 : 0,
+			surf ? surf->mapped : 0, xdg->initialized, xdg->initial_commit,
+			geo->x, geo->y, geo->width, geo->height,
+			surf ? surf->current.width : 0, surf ? surf->current.height : 0,
+			parent ? 1 : 0,
+			parent && parent->app_id ? parent->app_id : "",
+			parent && parent->title ? parent->title : "",
+			xdg_toplevel->current.min_width, xdg_toplevel->current.min_height,
+			xdg_toplevel->current.max_width, xdg_toplevel->current.max_height,
+			xdg_toplevel->pending.min_width, xdg_toplevel->pending.min_height,
+			xdg_toplevel->pending.max_width, xdg_toplevel->pending.max_height);
 }
 
 /** Find compositor output wrapper by wlroots output pointer. */
@@ -1385,6 +1523,14 @@ static void xdg_new_toplevel_decoration(struct wl_listener *listener, void *data
 	toplevel_apply_decoration_mode(view);
 }
 
+/** Trace transient parent changes without assigning dialog or modality policy. */
+static void toplevel_handle_set_parent(struct wl_listener *listener, void *data)
+{
+	(void)data;
+	struct comp_toplevel *view = wl_container_of(listener, view, set_parent);
+	log_xdg_state("set_parent", view);
+}
+
 /** Refresh tile/decor/foreign metadata when the visible title changes. */
 static void toplevel_handle_set_title(struct wl_listener *listener, void *data)
 {
@@ -1736,6 +1882,7 @@ static void toplevel_destroy(struct wl_listener *listener, void *data)
 		detach_listener_if_linked(&view->request_maximize);
 		detach_listener_if_linked(&view->request_fullscreen);
 		detach_listener_if_linked(&view->request_minimize);
+		detach_listener_if_linked(&view->set_parent);
 		detach_listener_if_linked(&view->set_title);
 		detach_listener_if_linked(&view->set_app_id);
 		detach_listener_if_linked(&view->new_popup);
@@ -1781,6 +1928,12 @@ static void toplevel_commit(struct wl_listener *listener, void *data)
 	}
 	struct wlr_xdg_surface *xdg = view->xdg_toplevel->base;
 	log_xdg_state("commit", view);
+	const bool configure_acked = view->pending_configure_serial != 0 &&
+		xdg->current.configure_serial == view->pending_configure_serial;
+	if (configure_acked)
+	{
+		view->pending_configure_serial = 0;
+	}
 	/* wlroots 0.19 asserts if we schedule configure before initialized. */
 	if (xdg->initial_commit && xdg->initialized)
 	{
@@ -1789,10 +1942,27 @@ static void toplevel_commit(struct wl_listener *listener, void *data)
 		if (geo->width <= 0 || geo->height <= 0)
 		{
 			log_xdg_state("commit:set_size0x0", view);
-			wlr_xdg_toplevel_set_size(view->xdg_toplevel, 0, 0);
+			toplevel_set_size(view, 0, 0);
 		}
 	}
 	toplevel_apply_decoration_mode(view);
+	toplevel_update_resize_anchor(view);
+	if (view->pending_configure_serial == 0 &&
+		xdg->geometry.width > 0 && xdg->geometry.height > 0)
+	{
+		/* wlroots retains the last requested size and includes it in later state-only
+		 * configure events. Once the client has answered our newest configure, keep
+		 * that retained state aligned with the geometry it actually committed. Calling
+		 * set_size here would schedule another configure and recreate the resize loop. */
+		view->xdg_toplevel->scheduled.width = xdg->geometry.width;
+		view->xdg_toplevel->scheduled.height = xdg->geometry.height;
+	}
+	if (view->server->grab == COMP_GRAB_RESIZE && view->server->grabbed_toplevel == view)
+	{
+		log_resize_state("commit-during-resize", view, view->server->grab_view_x, view->server->grab_view_y,
+						 view->server->grab_view_width, view->server->grab_view_height,
+						 view->server->resize_edges);
+	}
 }
 
 /** toplevel map callback: place/focus according to current layout policy and rules. */
@@ -1891,6 +2061,26 @@ static void toplevel_request_resize(struct wl_listener *listener, void *data)
 	struct comp_toplevel *view = wl_container_of(listener, view, request_resize);
 	struct wlr_xdg_toplevel_resize_event *ev = data;
 	struct comp_server *server = view->server;
+	if (xdg_debug_logs_enabled)
+	{
+		wlr_log(WLR_INFO,
+				"resizedbg:request app_id='%s' title='%s' edges=0x%x serial=%u seat_ok=%d button_count=%zu "
+				"parent=%d constraints_cur=min:%dx%d,max:%dx%d constraints_pending=min:%dx%d,max:%dx%d",
+				view->xdg_toplevel && view->xdg_toplevel->app_id ? view->xdg_toplevel->app_id : "",
+				view->xdg_toplevel && view->xdg_toplevel->title ? view->xdg_toplevel->title : "",
+				ev ? ev->edges : 0, ev ? ev->serial : 0,
+				(ev && ev->seat && ev->seat->seat == server->seat) ? 1 : 0,
+				server->seat ? server->seat->pointer_state.button_count : 0,
+				view->xdg_toplevel && view->xdg_toplevel->parent ? 1 : 0,
+				view->xdg_toplevel ? view->xdg_toplevel->current.min_width : 0,
+				view->xdg_toplevel ? view->xdg_toplevel->current.min_height : 0,
+				view->xdg_toplevel ? view->xdg_toplevel->current.max_width : 0,
+				view->xdg_toplevel ? view->xdg_toplevel->current.max_height : 0,
+				view->xdg_toplevel ? view->xdg_toplevel->pending.min_width : 0,
+				view->xdg_toplevel ? view->xdg_toplevel->pending.min_height : 0,
+				view->xdg_toplevel ? view->xdg_toplevel->pending.max_width : 0,
+				view->xdg_toplevel ? view->xdg_toplevel->pending.max_height : 0);
+	}
 
 	if (!toplevel_can_direct_resize(server, view))
 	{
@@ -1933,7 +2123,8 @@ static void toplevel_apply_requested_maximize(struct comp_toplevel *view)
 	}
 	const bool want_max = view->xdg_toplevel->requested.maximized;
 	const bool was_max = view->xdg_toplevel->current.maximized;
-	wlr_xdg_toplevel_set_maximized(view->xdg_toplevel, want_max);
+	toplevel_track_configure(view,
+		wlr_xdg_toplevel_set_maximized(view->xdg_toplevel, want_max));
 	if (want_max)
 	{
 		if (!was_max)
@@ -1959,7 +2150,7 @@ static void toplevel_apply_requested_maximize(struct comp_toplevel *view)
 		{
 			obox = co->layer_workarea;
 		}
-		wlr_xdg_toplevel_set_size(view->xdg_toplevel, obox.width, obox.height);
+		toplevel_set_size(view, obox.width, obox.height);
 		if (view->server->layout == COMP_LAYOUT_STACK || view->tile_float)
 		{
 			wlr_scene_node_set_position(&view->scene_tree->node, obox.x, obox.y);
@@ -1970,7 +2161,7 @@ static void toplevel_apply_requested_maximize(struct comp_toplevel *view)
 		/* Restore pre-maximize geometry so normalize returns to previous size and position. */
 		if (view->has_restore && view->restore_width > 0 && view->restore_height > 0)
 		{
-			wlr_xdg_toplevel_set_size(view->xdg_toplevel, view->restore_width, view->restore_height);
+			toplevel_set_size(view, view->restore_width, view->restore_height);
 		}
 		if (view->has_restore && (view->server->layout == COMP_LAYOUT_STACK || view->tile_float))
 		{
@@ -2006,7 +2197,8 @@ static void toplevel_request_fullscreen(struct wl_listener *listener, void *data
 		cancel_active_grab(view->server);
 	}
 	const bool want_fullscreen = view->xdg_toplevel->requested.fullscreen;
-	wlr_xdg_toplevel_set_fullscreen(view->xdg_toplevel, want_fullscreen);
+	toplevel_track_configure(view,
+		wlr_xdg_toplevel_set_fullscreen(view->xdg_toplevel, want_fullscreen));
 	if (want_fullscreen)
 	{
 		struct wlr_output *out = view->xdg_toplevel->requested.fullscreen_output;
@@ -2020,7 +2212,7 @@ static void toplevel_request_fullscreen(struct wl_listener *listener, void *data
 		{
 			wlr_output_layout_get_box(view->server->output_layout, out, &obox);
 		}
-		wlr_xdg_toplevel_set_size(view->xdg_toplevel, obox.width, obox.height);
+		toplevel_set_size(view, obox.width, obox.height);
 		if (view->server->layout == COMP_LAYOUT_STACK || view->tile_float)
 		{
 			wlr_scene_node_set_position(&view->scene_tree->node, obox.x, obox.y);
@@ -2028,7 +2220,7 @@ static void toplevel_request_fullscreen(struct wl_listener *listener, void *data
 	}
 	else
 	{
-		wlr_xdg_toplevel_set_size(view->xdg_toplevel, 0, 0);
+		toplevel_set_size(view, 0, 0);
 	}
 	foreign_toplevel_refresh(view);
 }
@@ -2161,6 +2353,8 @@ static void xdg_shell_new_toplevel(struct wl_listener *listener, void *data)
 	wl_signal_add(&xdg_toplevel->events.request_fullscreen, &view->request_fullscreen);
 	view->request_minimize.notify = toplevel_request_minimize;
 	wl_signal_add(&xdg_toplevel->events.request_minimize, &view->request_minimize);
+	view->set_parent.notify = toplevel_handle_set_parent;
+	wl_signal_add(&xdg_toplevel->events.set_parent, &view->set_parent);
 	view->new_popup.notify = toplevel_handle_new_popup;
 	wl_signal_add(&xdg_toplevel->base->events.new_popup, &view->new_popup);
 	/* wlroots asserts here on older xdg-shell versions; gate capabilities by negotiated version. */
@@ -2168,6 +2362,7 @@ static void xdg_shell_new_toplevel(struct wl_listener *listener, void *data)
 								xdg_toplevel->base->client->shell)
 								   ? xdg_toplevel->base->client->shell->version
 								   : 0;
+	bool wm_caps_enabled = false;
 	if (shell_ver >= XDG_TOPLEVEL_WM_CAPABILITIES_SINCE_VERSION)
 	{
 		wlr_xdg_toplevel_set_wm_capabilities(
@@ -2176,6 +2371,7 @@ static void xdg_shell_new_toplevel(struct wl_listener *listener, void *data)
 				WLR_XDG_TOPLEVEL_WM_CAPABILITIES_MAXIMIZE |
 				WLR_XDG_TOPLEVEL_WM_CAPABILITIES_FULLSCREEN |
 				WLR_XDG_TOPLEVEL_WM_CAPABILITIES_MINIMIZE);
+		wm_caps_enabled = true;
 		if (xdg_debug_logs_enabled)
 		{
 			wlr_log(WLR_INFO, "xdgdbg:wm_caps enabled shell_v=%u", shell_ver);
@@ -2186,6 +2382,7 @@ static void xdg_shell_new_toplevel(struct wl_listener *listener, void *data)
 		wlr_log(WLR_INFO, "xdgdbg:wm_caps skipped shell_v=%u (< %u)", shell_ver,
 				XDG_TOPLEVEL_WM_CAPABILITIES_SINCE_VERSION);
 	}
+	log_new_toplevel_state(xdg_toplevel, shell_ver, wm_caps_enabled);
 	wl_list_insert(server->toplevels.prev, &view->link);
 	view->listed = true;
 	foreign_toplevel_refresh(view);
@@ -2263,6 +2460,11 @@ static void cancel_active_grab(struct comp_server *server)
 	const bool rearrange = server->grab == COMP_GRAB_MOVE &&
 						   (server->layout == COMP_LAYOUT_TILE || server->layout == COMP_LAYOUT_SCROLL) &&
 						   grabbed && !grabbed->tile_float;
+	if (server->grab == COMP_GRAB_RESIZE && grabbed)
+	{
+		grabbed->resize_anchor_finishing = true;
+		toplevel_set_resizing(grabbed, false);
+	}
 	server->grab = COMP_GRAB_NONE;
 	server->grabbed_toplevel = NULL;
 	server->resize_edges = 0;
@@ -2324,35 +2526,242 @@ static bool toplevel_get_hit_box(struct comp_toplevel *view, struct wlr_box *out
 		return false;
 	}
 	const struct wlr_box geo = view->xdg_toplevel->base->geometry;
-	int box_x = view->scene_tree->node.x;
-	int box_y = view->scene_tree->node.y;
-	int box_w = 0;
-	int box_h = 0;
+	if (geo.width > 0 && geo.height > 0)
+	{
+		/* xdg window geometry excludes native CSD shadows and includes bridge-provided
+		 * decorations outside the base surface. It is therefore the common coordinate
+		 * space for both classes, independent of xdg-decoration negotiation. */
+		out->x = view->scene_tree->node.x + geo.x;
+		out->y = view->scene_tree->node.y + geo.y;
+		out->width = geo.width;
+		out->height = geo.height;
+		return true;
+	}
 
-	/* Use actual mapped surface extents first; these match what users visually hit. */
-	struct wlr_surface *surf = view->xdg_toplevel->base->surface;
-	if (surf && surf->current.width > 0 && surf->current.height > 0)
-	{
-		box_w = surf->current.width;
-		box_h = surf->current.height;
-	}
-	else
-	{
-		/* Fallback when surface size isn't available yet. */
-		box_x = view->scene_tree->node.x + geo.x;
-		box_y = view->scene_tree->node.y + geo.y;
-		box_w = geo.width;
-		box_h = geo.height;
-	}
-	if (box_w <= 0 || box_h <= 0)
+	/* Initial commits may not have window geometry yet. Use the base surface only until
+	 * the client supplies authoritative geometry on a later commit. */
+	struct wlr_surface *surface = view->xdg_toplevel->base->surface;
+	if (!surface || surface->current.width <= 0 || surface->current.height <= 0)
 	{
 		return false;
 	}
-	out->x = box_x;
-	out->y = box_y;
-	out->width = box_w;
-	out->height = box_h;
+	out->x = view->scene_tree->node.x;
+	out->y = view->scene_tree->node.y;
+	out->width = surface->current.width;
+	out->height = surface->current.height;
 	return true;
+}
+
+/**
+ * True when the client is expected to own interactive edge resizing inside its visible frame.
+ *
+ * Native CSD clients that negotiate xdg-decoration in client-side mode typically provide
+ * their own resize borders and cursor updates. Legacy clients and clients without an
+ * xdg-decoration object need a compositor-owned fallback resize ring instead.
+ */
+static bool toplevel_uses_client_side_resize(struct comp_toplevel *view)
+{
+	if (!view || !view->xdg_decoration)
+	{
+		return false;
+	}
+	return view->xdg_decoration->current.mode == WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE ||
+		   view->xdg_decoration->scheduled_mode == WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE;
+}
+
+/**
+ * True when Morph must provide resize edges despite negotiated client-side decorations.
+ *
+ * Xwayland bridges can advertise CSD while placing a synthetic titlebar outside the base
+ * surface. Such windows look decorated but do not issue xdg_toplevel.request_resize for
+ * their frame. Native CSD generally keeps its window geometry within the base surface and
+ * continues to own its inner resize border.
+ */
+static bool toplevel_needs_compositor_resize_fallback(struct comp_toplevel *view)
+{
+	if (!view || !view->xdg_toplevel || !view->xdg_toplevel->base)
+	{
+		return false;
+	}
+	const struct wlr_xdg_surface *xdg = view->xdg_toplevel->base;
+	const struct wlr_surface *surface = xdg->surface;
+	const struct wlr_box geometry = xdg->geometry;
+	if (!surface || surface->current.width <= 0 || surface->current.height <= 0 ||
+		geometry.width <= 0 || geometry.height <= 0)
+	{
+		return !toplevel_uses_client_side_resize(view);
+	}
+
+	const bool geometry_outside_surface =
+		geometry.x < 0 || geometry.y < 0 ||
+		geometry.x + geometry.width > surface->current.width ||
+		geometry.y + geometry.height > surface->current.height;
+	if (geometry_outside_surface)
+	{
+		return true;
+	}
+
+	/* Insets identify native CSD shadows even when the client never binds xdg-decoration.
+	 * Mousepad, for example, reports a 9 px inset on every side. */
+	const bool geometry_inset =
+		geometry.x > 0 || geometry.y > 0 ||
+		geometry.width < surface->current.width ||
+		geometry.height < surface->current.height;
+	if (geometry_inset)
+	{
+		return false;
+	}
+
+	return !toplevel_uses_client_side_resize(view);
+}
+
+/**
+ * Resolve the visible frame used to arm compositor-owned resize edges.
+ *
+ * xwayland-satellite reports its synthetic titlebar through negative XDG geometry while
+ * pointer input remains aligned to the base surface. Using that geometry for hit-testing
+ * shifts the top and bottom resize zones by exactly the titlebar height. Keep XDG geometry
+ * for configure sizes, but use the mapped surface extents for this bridge-only hitbox.
+ */
+static bool toplevel_get_resize_hit_box(struct comp_toplevel *view, struct wlr_box *out)
+{
+	if (!toplevel_get_hit_box(view, out))
+	{
+		return false;
+	}
+	if (!toplevel_needs_compositor_resize_fallback(view) || !view->xdg_toplevel->base->surface)
+	{
+		return true;
+	}
+
+	const struct wlr_surface *surface = view->xdg_toplevel->base->surface;
+	const struct wlr_box geometry = view->xdg_toplevel->base->geometry;
+	const bool geometry_outside_surface =
+		geometry.x < 0 || geometry.y < 0 ||
+		geometry.x + geometry.width > surface->current.width ||
+		geometry.y + geometry.height > surface->current.height;
+	if (geometry_outside_surface && surface->current.width > 0 && surface->current.height > 0)
+	{
+		out->x = view->scene_tree->node.x;
+		out->y = view->scene_tree->node.y;
+		out->width = surface->current.width;
+		out->height = surface->current.height;
+	}
+	return true;
+}
+
+/**
+ * Expose compositor-owned interactive resize state to the client for the lifetime of the grab.
+ *
+ * Some client-side decorated and bridged toolkits accept the requested size only while the
+ * xdg-toplevel is explicitly marked as being resized by the compositor.
+ */
+static void toplevel_set_resizing(struct comp_toplevel *view, bool resizing)
+{
+	if (!view || !view->xdg_toplevel || !toplevel_surface_initialized(view))
+	{
+		return;
+	}
+	toplevel_track_configure(view,
+		wlr_xdg_toplevel_set_resizing(view->xdg_toplevel, resizing));
+}
+
+/** Apply client-provided xdg_toplevel min/max constraints without moving the opposite edge. */
+static void toplevel_constrain_resize(struct comp_toplevel *view, uint32_t edges,
+								  int *x, int *y, int *width, int *height)
+{
+	if (!view || !view->xdg_toplevel || !x || !y || !width || !height)
+	{
+		return;
+	}
+
+	const struct wlr_xdg_toplevel_state *state = &view->xdg_toplevel->current;
+	int constrained_width = *width < 1 ? 1 : *width;
+	int constrained_height = *height < 1 ? 1 : *height;
+	if (state->min_width > 0 && constrained_width < state->min_width)
+	{
+		constrained_width = state->min_width;
+	}
+	if (state->max_width > 0 && constrained_width > state->max_width)
+	{
+		constrained_width = state->max_width;
+	}
+	if (state->min_height > 0 && constrained_height < state->min_height)
+	{
+		constrained_height = state->min_height;
+	}
+	if (state->max_height > 0 && constrained_height > state->max_height)
+	{
+		constrained_height = state->max_height;
+	}
+
+	if ((edges & WLR_EDGE_LEFT) && constrained_width != *width)
+	{
+		*x += *width - constrained_width;
+	}
+	if ((edges & WLR_EDGE_TOP) && constrained_height != *height)
+	{
+		*y += *height - constrained_height;
+	}
+	*width = constrained_width;
+	*height = constrained_height;
+}
+
+/** Reposition a committed left/top resize buffer while keeping its opposite edge fixed. */
+static void toplevel_update_resize_anchor(struct comp_toplevel *view)
+{
+	if (!view || !view->resize_anchor_active || !view->xdg_toplevel || !view->scene_tree)
+	{
+		return;
+	}
+
+	const struct wlr_box geometry = view->xdg_toplevel->base->geometry;
+	if (geometry.width <= 0 || geometry.height <= 0)
+	{
+		return;
+	}
+
+	int scene_x = view->scene_tree->node.x;
+	int scene_y = view->scene_tree->node.y;
+	if (view->resize_anchor_edges & WLR_EDGE_LEFT)
+	{
+		scene_x = view->resize_anchor_right - geometry.width - geometry.x;
+	}
+	if (view->resize_anchor_edges & WLR_EDGE_TOP)
+	{
+		scene_y = view->resize_anchor_bottom - geometry.height - geometry.y;
+	}
+	wlr_scene_node_set_position(&view->scene_tree->node, scene_x, scene_y);
+
+	if (view->resize_anchor_finishing &&
+		!view->xdg_toplevel->current.resizing && !view->xdg_toplevel->pending.resizing)
+	{
+		view->resize_anchor_active = false;
+		view->resize_anchor_finishing = false;
+	}
+}
+
+/** Apply one compositor resize target in XDG window-geometry coordinates. */
+static void toplevel_apply_resize_box(struct comp_toplevel *view, int x, int y, int width, int height)
+{
+	const struct wlr_box geometry = view->xdg_toplevel->base->geometry;
+	if (geometry.width > 0 && geometry.height > 0)
+	{
+		const int scene_x = view->resize_anchor_active &&
+			(view->resize_anchor_edges & WLR_EDGE_LEFT)
+				? view->scene_tree->node.x
+				: x - geometry.x;
+		const int scene_y = view->resize_anchor_active &&
+			(view->resize_anchor_edges & WLR_EDGE_TOP)
+				? view->scene_tree->node.y
+				: y - geometry.y;
+		wlr_scene_node_set_position(&view->scene_tree->node, scene_x, scene_y);
+	}
+	else
+	{
+		wlr_scene_node_set_position(&view->scene_tree->node, x, y);
+	}
+	toplevel_arrange_tile(view, x, y, width, height);
 }
 
 /** True when layout point lies within box bounds. */
@@ -2374,13 +2783,14 @@ static uint32_t toplevel_resize_edges_at(struct comp_toplevel *view, double cx, 
 		return 0;
 	}
 	struct wlr_box box;
-	if (!toplevel_get_hit_box(view, &box))
+	if (!toplevel_get_resize_hit_box(view, &box))
 	{
 		return 0;
 	}
 
-	/* Keep compositor outside-resize band minimal to avoid fighting CSD apps near borders. */
-	const int border = 1;
+	/* Native CSD owns its inner frame. Legacy and bridge-provided decorations need Morph's ring. */
+	const bool compositor_fallback = toplevel_needs_compositor_resize_fallback(view);
+	const int border = compositor_fallback ? 6 : 1;
 	const double left = (double)box.x;
 	const double top = (double)box.y;
 	const double right = left + (double)box.width;
@@ -2395,23 +2805,51 @@ static uint32_t toplevel_resize_edges_at(struct comp_toplevel *view, double cx, 
 	const bool within_y_band = cy >= top - (double)border && cy <= bottom + (double)border;
 	const bool within_x_band = cx >= left - (double)border && cx <= right + (double)border;
 
-	/* Outside-only edge zones: do not arm resize from inside client content. */
-	if (within_y_band && cx >= left - (double)border && cx < left)
+	if (!compositor_fallback)
 	{
-		edges |= WLR_EDGE_LEFT;
-	}
-	else if (within_y_band && (cx + right_comp) > right && (cx + right_comp) <= right + (double)border)
-	{
-		edges |= WLR_EDGE_RIGHT;
-	}
+		/* Outside-only edge zones: do not arm compositor resize from inside CSD client content. */
+		if (within_y_band && cx >= left - (double)border && cx < left)
+		{
+			edges |= WLR_EDGE_LEFT;
+		}
+		else if (within_y_band && (cx + right_comp) > right &&
+				 (cx + right_comp) <= right + (double)border)
+		{
+			edges |= WLR_EDGE_RIGHT;
+		}
 
-	if (within_x_band && cy >= top - (double)border && cy < top)
-	{
-		edges |= WLR_EDGE_TOP;
+		if (within_x_band && cy >= top - (double)border && cy < top)
+		{
+			edges |= WLR_EDGE_TOP;
+		}
+		else if (within_x_band && (cy + bottom_comp) > bottom &&
+				 (cy + bottom_comp) <= bottom + (double)border)
+		{
+			edges |= WLR_EDGE_BOTTOM;
+		}
 	}
-	else if (within_x_band && (cy + bottom_comp) > bottom && (cy + bottom_comp) <= bottom + (double)border)
+	else
 	{
-		edges |= WLR_EDGE_BOTTOM;
+		/* Legacy and bridge-decorated clients need an inner ring because no client resize request arrives. */
+		if (within_y_band && cx >= left - (double)border && cx < left + (double)border)
+		{
+			edges |= WLR_EDGE_LEFT;
+		}
+		else if (within_y_band && (cx + right_comp) > right - (double)border &&
+				 (cx + right_comp) <= right + (double)border)
+		{
+			edges |= WLR_EDGE_RIGHT;
+		}
+
+		if (within_x_band && cy >= top - (double)border && cy < top + (double)border)
+		{
+			edges |= WLR_EDGE_TOP;
+		}
+		else if (within_x_band && (cy + bottom_comp) >= bottom &&
+				 (cy + bottom_comp) <= bottom + (double)border)
+		{
+			edges |= WLR_EDGE_BOTTOM;
+		}
 	}
 
 	return edges;
@@ -2511,12 +2949,33 @@ static void begin_resize(struct comp_server *server, struct comp_toplevel *view,
 	server->grab_cursor_x = server->cursor->x;
 	server->grab_cursor_y = server->cursor->y;
 	server->resize_edges = edges;
+	server->resize_last_configure_msec = 0;
+	server->resize_pending_valid = false;
 
-	struct wlr_box geo = view->xdg_toplevel->base->geometry;
-	server->grab_view_x = view->scene_tree->node.x;
-	server->grab_view_y = view->scene_tree->node.y;
-	server->grab_view_width = geo.width;
-	server->grab_view_height = geo.height;
+	struct wlr_box box;
+	if (toplevel_get_hit_box(view, &box))
+	{
+		server->grab_view_x = box.x;
+		server->grab_view_y = box.y;
+		server->grab_view_width = box.width;
+		server->grab_view_height = box.height;
+	}
+	else
+	{
+		const struct wlr_box geo = view->xdg_toplevel->base->geometry;
+		server->grab_view_x = view->scene_tree->node.x + geo.x;
+		server->grab_view_y = view->scene_tree->node.y + geo.y;
+		server->grab_view_width = geo.width;
+		server->grab_view_height = geo.height;
+	}
+	view->resize_anchor_edges = edges;
+	view->resize_anchor_right = server->grab_view_x + server->grab_view_width;
+	view->resize_anchor_bottom = server->grab_view_y + server->grab_view_height;
+	view->resize_anchor_active = (edges & (WLR_EDGE_LEFT | WLR_EDGE_TOP)) != 0;
+	view->resize_anchor_finishing = false;
+	log_resize_state("begin", view, server->grab_view_x, server->grab_view_y,
+					 server->grab_view_width, server->grab_view_height, edges);
+	toplevel_set_resizing(view, true);
 	server->swallow_left_release = false;
 }
 
@@ -4796,6 +5255,9 @@ static void process_cursor_motion(struct comp_server *server, uint32_t time_msec
 		double dx = server->cursor->x - server->grab_cursor_x;
 		double dy = server->cursor->y - server->grab_cursor_y;
 
+		/* Resize math runs in xdg window-geometry coordinates so it matches the edge
+		 * hit box that armed the grab. Convert back to scene coordinates only when
+		 * moving the scene node. */
 		int x = server->grab_view_x;
 		int y = server->grab_view_y;
 		int w = server->grab_view_width;
@@ -4820,25 +5282,28 @@ static void process_cursor_motion(struct comp_server *server, uint32_t time_msec
 			h = server->grab_view_height + (int)dy;
 		}
 
-		if (w < 1)
-		{
-			if (server->resize_edges & WLR_EDGE_LEFT)
-			{
-				x += w - 1;
-			}
-			w = 1;
-		}
-		if (h < 1)
-		{
-			if (server->resize_edges & WLR_EDGE_TOP)
-			{
-				y += h - 1;
-			}
-			h = 1;
-		}
+		toplevel_constrain_resize(v, server->resize_edges, &x, &y, &w, &h);
 
-		wlr_scene_node_set_position(&v->scene_tree->node, x, y);
-		toplevel_arrange_tile(v, x, y, w, h);
+		log_resize_state("motion", v, x, y, w, h, server->resize_edges);
+		if (toplevel_needs_compositor_resize_fallback(v) &&
+			server->resize_last_configure_msec != 0 &&
+			time_msec - server->resize_last_configure_msec < bridge_resize_interval_msec)
+		{
+			/* xwayland-satellite acknowledges XDG configure serials before the underlying
+			 * X11 client has processed ConfigureNotify. Pace legacy bridge traffic at the
+			 * configured rate and retain only the newest pointer target between intervals. */
+			server->resize_pending_x = x;
+			server->resize_pending_y = y;
+			server->resize_pending_width = w;
+			server->resize_pending_height = h;
+			server->resize_pending_valid = true;
+		}
+		else
+		{
+			toplevel_apply_resize_box(v, x, y, w, h);
+			server->resize_last_configure_msec = time_msec;
+			server->resize_pending_valid = false;
+		}
 	}
 
 	if (server->grab == COMP_GRAB_RESIZE)
@@ -4852,19 +5317,40 @@ static void process_cursor_motion(struct comp_server *server, uint32_t time_msec
 		return;
 	}
 
+	/* Bridge-provided CSD can cover the visible frame with a client surface without ever
+	 * issuing request_resize. Give Morph's fallback ring first chance on those windows. */
+	struct comp_toplevel *edge_view = toplevel_near_cursor_resize_edge(server);
+	if (edge_view && toplevel_can_direct_resize(server, edge_view) &&
+		toplevel_needs_compositor_resize_fallback(edge_view))
+	{
+		const uint32_t edges = toplevel_resize_edges_at_cursor(server, edge_view);
+		const char *cursor_name = cursor_name_for_resize_edges(edges);
+		if (cursor_name)
+		{
+			wlr_cursor_set_xcursor(server->cursor, server->cursor_mgr, cursor_name);
+			wlr_seat_pointer_notify_clear_focus(server->seat);
+			return;
+		}
+	}
+
 	double sx, sy;
 	struct wlr_surface *surface = surface_at(server, server->cursor->x, server->cursor->y, &sx, &sy);
 	if (surface)
 	{
-		/* Inner zone: hand pointer ownership to the client surface immediately. */
-		/* notify_enter is intentionally sent on every transition so client cursor state
-		 * is restored right away after compositor-owned edge/resize cursor phases. */
+		/* Clearing pointer focus while Morph owns a resize edge prevents a bridged client
+		 * from replacing that cursor. Restore a neutral image before re-entering the surface;
+		 * older X11 toolkits do not necessarily submit another cursor request until a click. */
+		if (!server->seat->pointer_state.focused_surface)
+		{
+			wlr_cursor_set_xcursor(server->cursor, server->cursor_mgr, "default");
+		}
+		/* Re-entering transfers cursor ownership back to the client immediately. */
 		wlr_seat_pointer_notify_enter(server->seat, surface, sx, sy);
 		wlr_seat_pointer_notify_motion(server->seat, time_msec, sx, sy);
 		return;
 	}
 
-	struct comp_toplevel *edge_view = toplevel_near_cursor_resize_edge(server);
+	edge_view = toplevel_near_cursor_resize_edge(server);
 	if (edge_view && toplevel_can_direct_resize(server, edge_view))
 	{
 		struct wlr_box box;
@@ -4993,6 +5479,30 @@ static void server_cursor_button(struct wl_listener *listener, void *data)
 	{
 		struct comp_toplevel *dragged = server->grabbed_toplevel;
 		bool was_move = server->grab == COMP_GRAB_MOVE;
+		bool was_resize = server->grab == COMP_GRAB_RESIZE;
+		if (was_resize && dragged)
+		{
+			int release_x = server->grab_view_x;
+			int release_y = server->grab_view_y;
+			int release_width = server->grab_view_width;
+			int release_height = server->grab_view_height;
+			if (server->resize_pending_valid)
+			{
+				/* Apply the exact final pointer target even if it fell inside the throttle interval. */
+				release_x = server->resize_pending_x;
+				release_y = server->resize_pending_y;
+				release_width = server->resize_pending_width;
+				release_height = server->resize_pending_height;
+				toplevel_apply_resize_box(dragged,
+					release_x, release_y, release_width, release_height);
+				server->resize_pending_valid = false;
+			}
+			log_resize_state("release", dragged,
+				release_x, release_y, release_width, release_height,
+				server->resize_edges);
+			dragged->resize_anchor_finishing = true;
+			toplevel_set_resizing(dragged, false);
+		}
 		server->grab = COMP_GRAB_NONE;
 		server->grabbed_toplevel = NULL;
 		server->resize_edges = 0;
@@ -5109,16 +5619,8 @@ static void seat_request_cursor(struct wl_listener *listener, void *data)
 	{
 		return;
 	}
-	/* When hovering a direct-resize edge/corner, do not let clients override that cursor. */
-	double sx, sy;
-	struct wlr_surface *surface = surface_at(server, server->cursor->x, server->cursor->y, &sx, &sy);
-	struct comp_toplevel *v = NULL;
-	if (!surface)
-	{
-		/* Only evaluate compositor outside-edge resize zones when no client surface
-		 * is currently under the cursor; inside-surface cursor ownership stays client-side. */
-		v = toplevel_near_cursor_resize_edge(server);
-	}
+	/* Morph owns both outside resize zones and the inner fallback ring used by bridged CSD. */
+	struct comp_toplevel *v = toplevel_near_cursor_resize_edge(server);
 	if (v && toplevel_can_direct_resize(server, v) &&
 		toplevel_effective_resize_edges_at_cursor(server, v))
 	{
@@ -5564,6 +6066,7 @@ int main(int argc, char **argv)
 		const char *e = getenv("MORPH_DEBUG_XDG");
 		xdg_debug_logs_enabled = e && e[0] && strcmp(e, "0") != 0;
 	}
+	configure_bridge_resize_rate_from_env();
 	/*
 	 * Some parent processes leave SIGCHLD ignored; the kernel then auto-reaps
 	 * children and waitpid() in when= / shutdown hooks fails with ECHILD.
