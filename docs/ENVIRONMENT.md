@@ -133,6 +133,34 @@ Optional verbose XDG lifecycle debug flag passed to **Morph**.
 
 Use this when debugging early xdg_toplevel requests/state transitions.
 
+Per-commit XDG logging is intentionally not included because clients such as
+VS Code can commit often enough to overload live sessions with synchronous log
+I/O. Set `MORPH_DEBUG_XDG_COMMITS=1` together with `MORPH_DEBUG_XDG=1` only when
+you explicitly need every `xdg_surface` commit in the log.
+
+<a id="morph-debug-pointer-focus"></a>
+### MORPH_DEBUG_POINTER_FOCUS
+
+Optional pointer enter/leave trace for diagnosing focus churn.
+
+- unset or `0`: disabled
+- non-empty and not `0`: enabled
+
+Use this for panel hover, root focus, and pointer-focus handoff debugging. It
+logs only focus transitions, not every pointer motion event.
+
+<a id="morph-debug-layer-hit"></a>
+### MORPH_DEBUG_LAYER_HIT
+
+Optional layer-shell hitbox trace for diagnosing panel hover flicker.
+
+- unset or `0`: disabled
+- non-empty and not `0`: enabled
+
+Use this together with `MORPH_DEBUG_POINTER_FOCUS` when a layer-shell panel loses
+hover focus to an adjacent or maximized toplevel. Logs include layer surface
+bounds, guarded bounds, exclusive zone, anchor flags, and current workarea.
+
 <a id="morph-bridge-resize-hz"></a>
 ### MORPH_BRIDGE_RESIZE_HZ
 
@@ -146,6 +174,13 @@ clients running through xwayland-satellite.
 Most users should leave this variable unset. It exists for diagnosing or tuning
 legacy toolkit clients that cannot keep up with unrestricted resize configure
 events. It does not change resize behavior for native Wayland clients.
+
+Tune this value by changing it in small integer steps and restarting the session
+that sources the environment file. Lower values send fewer resize configures and
+can reduce flicker or delayed redraws in slow legacy toolkits, but interactive
+resize feels more stepped. Higher values feel more responsive, but can make old
+GTK2/X11 bridge clients fall behind and repaint stale sizes. Fractional values
+such as `12.5` are invalid; use whole hertz values only.
 
 <a id="morph-managed-hooks"></a>
 ### MORPH_MANAGED_HOOKS

@@ -134,9 +134,13 @@ struct comp_toplevel
 	uint32_t pending_configure_serial;
 	/** Fixed opposite edges used while left/top resize buffers are being committed. */
 	uint32_t resize_anchor_edges;
+	/** Absolute right edge captured at grab start for left-edge resize anchoring. */
 	int resize_anchor_right;
+	/** Absolute bottom edge captured at grab start for top-edge resize anchoring. */
 	int resize_anchor_bottom;
+	/** True while scene position must follow client commits to keep the far edge stable. */
 	bool resize_anchor_active;
+	/** Delays anchor cleanup until the final non-resizing commit has been observed. */
 	bool resize_anchor_finishing;
 	bool minimized;
 	int restore_x;
@@ -145,6 +149,16 @@ struct comp_toplevel
 	int restore_height;
 	bool has_restore;
 	struct wlr_foreign_toplevel_handle_v1 *foreign_toplevel;
+	/** Last title sent to foreign-toplevel clients; suppresses redundant panel redraws. */
+	char *foreign_title;
+	/** Last app_id sent to foreign-toplevel clients; suppresses redundant panel redraws. */
+	char *foreign_app_id;
+	/** True after boolean foreign-toplevel state has been initialized once. */
+	bool foreign_state_valid;
+	bool foreign_activated;
+	bool foreign_maximized;
+	bool foreign_fullscreen;
+	bool foreign_minimized;
 	struct wl_listener foreign_request_activate;
 	struct wl_listener foreign_request_close;
 	struct wlr_xdg_toplevel_decoration_v1 *xdg_decoration;

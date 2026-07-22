@@ -121,6 +121,7 @@ static void pointer_constraint_handle_commit(struct wl_listener *listener, void 
 static void cancel_active_grab(struct comp_server *server);
 static void clear_keyboard_focus(struct comp_server *server);
 static void begin_move(struct comp_server *server, struct comp_toplevel *view, bool swallow_left_release);
+static bool toplevel_effectively_maximized(struct comp_toplevel *view);
 static bool toplevel_can_direct_resize(struct comp_server *server, struct comp_toplevel *view);
 static bool toplevel_get_hit_box(struct comp_toplevel *view, struct wlr_box *out);
 static bool toplevel_get_resize_hit_box(struct comp_toplevel *view, struct wlr_box *out);
@@ -143,6 +144,8 @@ static struct comp_toplevel **tile_sorted_views(struct comp_server *server, size
 static int tile_sorted_index(struct comp_toplevel **arr, size_t n, struct comp_toplevel *v);
 static void toplevel_apply_decoration_mode(struct comp_toplevel *view);
 static void toplevel_apply_requested_maximize(struct comp_toplevel *view);
+static void toplevel_clamp_floating_box_to_workarea(struct comp_toplevel *view,
+													int *scene_x, int *scene_y, int *width, int *height);
 static struct comp_output *toplevel_preferred_output(struct comp_toplevel *view);
 static struct comp_output *toplevel_tile_output(struct comp_toplevel *t);
 static void foreign_toplevel_refresh(struct comp_toplevel *view);
@@ -257,6 +260,34 @@ static void toplevel_set_size(struct comp_toplevel *view, int width, int height)
 		wlr_xdg_toplevel_set_size(view->xdg_toplevel, width, height));
 }
 
+/**
+ * Send one configure carrying both maximize state and size.
+ *
+ * Clients such as VS Code can react badly if the maximize bit and target size arrive as
+ * separate configures. Sending both together prevents a client from acknowledging an
+ * intermediate half-maximized state with stale geometry.
+ */
+static void toplevel_set_maximized_size(struct comp_toplevel *view, bool maximized, int width, int height)
+{
+	if (!view || !view->xdg_toplevel)
+	{
+		return;
+	}
+	const struct wlr_xdg_toplevel_state current = view->xdg_toplevel->current;
+	struct wlr_xdg_toplevel_configure configure = {
+		.maximized = maximized,
+		.fullscreen = current.fullscreen,
+		.resizing = current.resizing,
+		.activated = current.activated,
+		.suspended = current.suspended,
+		.tiled = current.tiled,
+		.width = width,
+		.height = height,
+	};
+	toplevel_track_configure(view,
+		wlr_xdg_toplevel_configure(view->xdg_toplevel, &configure));
+}
+
 /** Extract normalized title/app fields for config/rule matching across backends. */
 static void toplevel_title_app_for_config(const struct comp_toplevel *v, const char **title_out,
 										  const char **app_out)
@@ -311,14 +342,27 @@ static void toplevel_arrange_tile(struct comp_toplevel *v, int layout_x, int lay
 static bool compositor_session_active;
 /** Verbose XDG lifecycle logs (off by default). Enable with `MORPH_DEBUG_XDG=1`. */
 static bool xdg_debug_logs_enabled;
+/** Extra per-commit XDG trace; too noisy for normal live compositor debugging. */
+static bool xdg_commit_debug_logs_enabled;
+/** Focus-only pointer trace for diagnosing layer-shell hover and leave/enter churn. */
+static bool pointer_focus_debug_logs_enabled;
+/** Layer-shell hitbox trace used when panel hover regions fight toplevel hit-testing. */
+static bool layer_hit_debug_logs_enabled;
 /** Pace legacy X11 bridge resizes so GTK2 can process ConfigureNotify without a backlog. */
 static uint32_t bridge_resize_interval_msec = 59;
+/** Extra pointer-focus band for bottom/top panels whose hover visuals extend past their surface. */
+static const int layer_pointer_guard_px = 40;
 /** Optional append-only log target set by `--log-file`; NULL means stderr-only. */
 static FILE *morph_log_file;
 /** Active startup log threshold used by our callback for explicit filtering. */
 static enum wlr_log_importance morph_active_log_level = WLR_INFO;
 
-/** Apply an optional resize frequency override for legacy X11 bridge clients. */
+/**
+ * Apply an optional resize frequency override for legacy X11 bridge clients.
+ *
+ * Lower values pace configure events more aggressively for slow toolkits; higher values
+ * feel more immediate but can recreate the resize backlog that causes stale repaint loops.
+ */
 static void configure_bridge_resize_rate_from_env(void)
 {
 	const char *value = getenv("MORPH_BRIDGE_RESIZE_HZ");
@@ -337,6 +381,7 @@ static void configure_bridge_resize_rate_from_env(void)
 		return;
 	}
 
+	/* Round to the nearest millisecond so integer hertz values map predictably. */
 	bridge_resize_interval_msec = (uint32_t)((1000 + hz / 2) / hz);
 	wlr_log(WLR_INFO, "Legacy bridge resize rate: %ld Hz (%u ms)",
 		hz, bridge_resize_interval_msec);
@@ -627,7 +672,38 @@ static struct comp_output *toplevel_preferred_output(struct comp_toplevel *view)
 	return comp_output_from_wlr(server, out);
 }
 
-/** Push current title/app_id/activation metadata to foreign-toplevel clients. */
+/**
+ * Update one cached foreign-toplevel string and report whether clients need a protocol update.
+ *
+ * wlroots forwards every setter to clients, so avoiding unchanged strings prevents panels
+ * from repainting their task list continuously while active/maximized state is stable.
+ */
+static bool foreign_toplevel_cache_string(char **cached, const char *value)
+{
+	const char *safe_value = value ? value : "";
+	if (*cached && !strcmp(*cached, safe_value))
+	{
+		return false;
+	}
+
+	char *copy = strdup(safe_value);
+	if (!copy)
+	{
+		wlr_log_errno(WLR_ERROR, "strdup foreign-toplevel metadata");
+		return false;
+	}
+	free(*cached);
+	*cached = copy;
+	return true;
+}
+
+/**
+ * Push current title/app_id/activation metadata to foreign-toplevel clients.
+ *
+ * This function is deliberately edge-triggered. Some panels redraw on every foreign
+ * toplevel update even if the payload is identical; caching here keeps hover and active
+ * visuals stable under clients that commit frequently.
+ */
 static void foreign_toplevel_refresh(struct comp_toplevel *view)
 {
 	if (!view || !view->foreign_toplevel)
@@ -637,16 +713,39 @@ static void foreign_toplevel_refresh(struct comp_toplevel *view)
 	const char *title = "";
 	const char *app_id = "";
 	toplevel_title_app_for_config(view, &title, &app_id);
-	wlr_foreign_toplevel_handle_v1_set_title(view->foreign_toplevel, title);
-	wlr_foreign_toplevel_handle_v1_set_app_id(view->foreign_toplevel, app_id);
+	if (foreign_toplevel_cache_string(&view->foreign_title, title))
+	{
+		wlr_foreign_toplevel_handle_v1_set_title(view->foreign_toplevel, view->foreign_title);
+	}
+	if (foreign_toplevel_cache_string(&view->foreign_app_id, app_id))
+	{
+		wlr_foreign_toplevel_handle_v1_set_app_id(view->foreign_toplevel, view->foreign_app_id);
+	}
 	const bool activated = view->server->focused_toplevel == view && toplevel_surface_mapped(view) &&
 						   view->workspace == view->server->current_workspace;
 	const bool maximized = view->xdg_toplevel && view->xdg_toplevel->current.maximized;
 	const bool fullscreen = view->xdg_toplevel && view->xdg_toplevel->current.fullscreen;
-	wlr_foreign_toplevel_handle_v1_set_activated(view->foreign_toplevel, activated);
-	wlr_foreign_toplevel_handle_v1_set_maximized(view->foreign_toplevel, maximized);
-	wlr_foreign_toplevel_handle_v1_set_fullscreen(view->foreign_toplevel, fullscreen);
-	wlr_foreign_toplevel_handle_v1_set_minimized(view->foreign_toplevel, view->minimized);
+	if (!view->foreign_state_valid || view->foreign_activated != activated)
+	{
+		wlr_foreign_toplevel_handle_v1_set_activated(view->foreign_toplevel, activated);
+		view->foreign_activated = activated;
+	}
+	if (!view->foreign_state_valid || view->foreign_maximized != maximized)
+	{
+		wlr_foreign_toplevel_handle_v1_set_maximized(view->foreign_toplevel, maximized);
+		view->foreign_maximized = maximized;
+	}
+	if (!view->foreign_state_valid || view->foreign_fullscreen != fullscreen)
+	{
+		wlr_foreign_toplevel_handle_v1_set_fullscreen(view->foreign_toplevel, fullscreen);
+		view->foreign_fullscreen = fullscreen;
+	}
+	if (!view->foreign_state_valid || view->foreign_minimized != view->minimized)
+	{
+		wlr_foreign_toplevel_handle_v1_set_minimized(view->foreign_toplevel, view->minimized);
+		view->foreign_minimized = view->minimized;
+	}
+	view->foreign_state_valid = true;
 }
 
 /** Refresh foreign-toplevel metadata for all known toplevels. */
@@ -816,6 +915,208 @@ static struct comp_toplevel *toplevel_at(struct comp_server *server, double lx, 
 		}
 	}
 	return NULL;
+}
+
+/**
+ * True when a visible panel-like layer surface owns the point plus an optional edge guard.
+ *
+ * The guard compensates for panels whose visual hover area, shadow, or input feedback
+ * extends a few pixels beyond the committed layer-surface buffer.
+ */
+static bool blocking_layer_surface_at_guard(struct comp_server *server, double lx, double ly, int guard)
+{
+	if (!server)
+	{
+		return false;
+	}
+	struct comp_layer *layer;
+	wl_list_for_each(layer, &server->layers, link)
+	{
+		struct wlr_layer_surface_v1 *ls = layer->layer_surface;
+		if (!ls || !ls->surface || !ls->surface->mapped || !layer->scene_layer || !layer->scene_layer->tree)
+		{
+			continue;
+		}
+		const enum zwlr_layer_shell_v1_layer lyr = ls->current.layer;
+		const bool visible_above_windows = lyr == ZWLR_LAYER_SHELL_V1_LAYER_TOP ||
+										   lyr == ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY;
+		if (!visible_above_windows && ls->current.exclusive_zone <= 0)
+		{
+			continue;
+		}
+		struct wlr_box box = {
+			.x = layer->scene_layer->tree->node.x,
+			.y = layer->scene_layer->tree->node.y,
+			.width = (int)ls->current.actual_width,
+			.height = (int)ls->current.actual_height,
+		};
+		if (ls->current.exclusive_zone > 0 && guard > 0)
+		{
+			/* GTK layer-shell panels can draw hover backgrounds or shadows a few pixels
+			 * past the committed surface bounds. Treat that edge band as panel-owned so
+			 * pointer focus does not flap between the panel and the window below it. */
+			const uint32_t anchor = ls->current.anchor;
+			if ((anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM) &&
+				!(anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP))
+			{
+				box.y -= guard;
+				box.height += guard;
+			}
+			if ((anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP) &&
+				!(anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM))
+			{
+				box.height += guard;
+			}
+			if ((anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT) &&
+				!(anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT))
+			{
+				box.x -= guard;
+				box.width += guard;
+			}
+			if ((anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT) &&
+				!(anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT))
+			{
+				box.width += guard;
+			}
+		}
+		if (box.width > 0 && box.height > 0 && point_in_box(&box, lx, ly))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+/** True when a visible panel-like layer surface owns the point, including Morph's panel guard. */
+static bool blocking_layer_surface_at(struct comp_server *server, double lx, double ly)
+{
+	return blocking_layer_surface_at_guard(server, lx, ly, layer_pointer_guard_px);
+}
+
+/** Stable layer-shell layer name for debug logs. */
+static const char *layer_debug_layer_name(enum zwlr_layer_shell_v1_layer layer)
+{
+	switch (layer)
+	{
+	case ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND:
+		return "background";
+	case ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM:
+		return "bottom";
+	case ZWLR_LAYER_SHELL_V1_LAYER_TOP:
+		return "top";
+	case ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY:
+		return "overlay";
+	default:
+		return "unknown";
+	}
+}
+
+/** Expand a box in all directions for proximity-only debug filtering. */
+static struct wlr_box layer_debug_expanded_box(struct wlr_box box, int margin)
+{
+	box.x -= margin;
+	box.y -= margin;
+	box.width += margin * 2;
+	box.height += margin * 2;
+	return box;
+}
+
+/** Log layer-shell geometry near a pointer-focus transition without changing hit-test behavior. */
+static void layer_debug_log_hit_context(struct comp_server *server, const char *old_role,
+										const char *new_role, double lx, double ly)
+{
+	if (!layer_hit_debug_logs_enabled || !server)
+	{
+		return;
+	}
+	if (strcmp(old_role, "layer") && strcmp(new_role, "layer"))
+	{
+		return;
+	}
+
+	struct comp_layer *layer;
+	wl_list_for_each(layer, &server->layers, link)
+	{
+		struct wlr_layer_surface_v1 *ls = layer->layer_surface;
+		if (!ls || !ls->surface || !ls->surface->mapped || !layer->scene_layer || !layer->scene_layer->tree)
+		{
+			continue;
+		}
+		const enum zwlr_layer_shell_v1_layer layer_type = ls->current.layer;
+		const bool visible_above_windows = layer_type == ZWLR_LAYER_SHELL_V1_LAYER_TOP ||
+										   layer_type == ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY;
+		if (!visible_above_windows && ls->current.exclusive_zone <= 0)
+		{
+			continue;
+		}
+
+		struct wlr_box surface_box = {
+			.x = layer->scene_layer->tree->node.x,
+			.y = layer->scene_layer->tree->node.y,
+			.width = (int)ls->current.actual_width,
+			.height = (int)ls->current.actual_height,
+		};
+		struct wlr_box guard_box = surface_box;
+		if (ls->current.exclusive_zone > 0)
+		{
+			const uint32_t anchor = ls->current.anchor;
+			if ((anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM) &&
+				!(anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP))
+			{
+				guard_box.y -= layer_pointer_guard_px;
+				guard_box.height += layer_pointer_guard_px;
+			}
+			if ((anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP) &&
+				!(anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM))
+			{
+				guard_box.height += layer_pointer_guard_px;
+			}
+			if ((anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT) &&
+				!(anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT))
+			{
+				guard_box.x -= layer_pointer_guard_px;
+				guard_box.width += layer_pointer_guard_px;
+			}
+			if ((anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT) &&
+				!(anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT))
+			{
+				guard_box.width += layer_pointer_guard_px;
+			}
+		}
+
+		struct wlr_box near_box = layer_debug_expanded_box(guard_box, 96);
+		if (!point_in_box(&near_box, lx, ly))
+		{
+			continue;
+		}
+
+		struct comp_output *out = comp_output_from_wlr(server, ls->output);
+		struct wlr_box workarea = {0};
+		if (out)
+		{
+			workarea = out->layer_workarea;
+		}
+		wlr_log(WLR_INFO,
+				"layerhit:focus old=%s new=%s cursor=%.1f,%.1f ns='%s' layer=%s anchor=0x%x exclusive=%d surface=%d,%d %dx%d guard=%d,%d %dx%d in_surface=%d in_guard=%d workarea=%d,%d %dx%d",
+				old_role, new_role, lx, ly, ls->namespace ? ls->namespace : "",
+				layer_debug_layer_name(layer_type), ls->current.anchor,
+				ls->current.exclusive_zone, surface_box.x, surface_box.y,
+				surface_box.width, surface_box.height, guard_box.x, guard_box.y,
+				guard_box.width, guard_box.height, point_in_box(&surface_box, lx, ly),
+				point_in_box(&guard_box, lx, ly), workarea.x, workarea.y,
+				workarea.width, workarea.height);
+	}
+}
+
+/** True when the current pointer focus belongs to a layer-shell surface. */
+static bool pointer_focus_is_layer_surface(struct comp_server *server)
+{
+	if (!server || !server->seat || !server->seat->pointer_state.focused_surface)
+	{
+		return false;
+	}
+	struct wlr_surface *root = wlr_surface_get_root_surface(server->seat->pointer_state.focused_surface);
+	return wlr_layer_surface_v1_try_from_wlr_surface(root) != NULL;
 }
 
 /** Per-output frame handler: drive scene commit and synchronized layout animation repaint. */
@@ -1914,6 +2215,8 @@ static void toplevel_destroy(struct wl_listener *listener, void *data)
 		wlr_foreign_toplevel_handle_v1_destroy(view->foreign_toplevel);
 		view->foreign_toplevel = NULL;
 	}
+	free(view->foreign_title);
+	free(view->foreign_app_id);
 	if (view->server->focused_toplevel == view)
 	{
 		clear_keyboard_focus(view->server);
@@ -1941,7 +2244,10 @@ static void toplevel_commit(struct wl_listener *listener, void *data)
 		return;
 	}
 	struct wlr_xdg_surface *xdg = view->xdg_toplevel->base;
-	log_xdg_state("commit", view);
+	if (xdg_commit_debug_logs_enabled)
+	{
+		log_xdg_state("commit", view);
+	}
 	const bool configure_acked = view->pending_configure_serial != 0 &&
 		xdg->current.configure_serial == view->pending_configure_serial;
 	if (configure_acked)
@@ -2066,6 +2372,10 @@ static void toplevel_request_move(struct wl_listener *listener, void *data)
 	{
 		return;
 	}
+	if (toplevel_effectively_maximized(view))
+	{
+		return;
+	}
 	begin_move(view->server, view, false);
 }
 
@@ -2137,11 +2447,9 @@ static void toplevel_apply_requested_maximize(struct comp_toplevel *view)
 	}
 	const bool want_max = view->xdg_toplevel->requested.maximized;
 	const bool was_max = view->xdg_toplevel->current.maximized;
-	toplevel_track_configure(view,
-		wlr_xdg_toplevel_set_maximized(view->xdg_toplevel, want_max));
 	if (want_max)
 	{
-		if (!was_max)
+		if (!was_max || !view->has_restore)
 		{
 			/* Capture pre-maximize geometry once so normalize can restore it verbatim. */
 			const struct wlr_box *geo = &view->xdg_toplevel->base->geometry;
@@ -2164,7 +2472,7 @@ static void toplevel_apply_requested_maximize(struct comp_toplevel *view)
 		{
 			obox = co->layer_workarea;
 		}
-		toplevel_set_size(view, obox.width, obox.height);
+		toplevel_set_maximized_size(view, true, obox.width, obox.height);
 		if (view->server->layout == COMP_LAYOUT_STACK || view->tile_float)
 		{
 			wlr_scene_node_set_position(&view->scene_tree->node, obox.x, obox.y);
@@ -2175,11 +2483,41 @@ static void toplevel_apply_requested_maximize(struct comp_toplevel *view)
 		/* Restore pre-maximize geometry so normalize returns to previous size and position. */
 		if (view->has_restore && view->restore_width > 0 && view->restore_height > 0)
 		{
-			toplevel_set_size(view, view->restore_width, view->restore_height);
+			int restore_x = view->restore_x;
+			int restore_y = view->restore_y;
+			int restore_width = view->restore_width;
+			int restore_height = view->restore_height;
+			if (view->server->layout == COMP_LAYOUT_STACK || view->tile_float)
+			{
+				toplevel_clamp_floating_box_to_workarea(view,
+					&restore_x, &restore_y, &restore_width, &restore_height);
+			}
+			toplevel_set_maximized_size(view, false, restore_width, restore_height);
+			if (view->server->layout == COMP_LAYOUT_STACK || view->tile_float)
+			{
+				wlr_scene_node_set_position(&view->scene_tree->node, restore_x, restore_y);
+			}
+			view->has_restore = false;
 		}
-		if (view->has_restore && (view->server->layout == COMP_LAYOUT_STACK || view->tile_float))
+		else
 		{
-			wlr_scene_node_set_position(&view->scene_tree->node, view->restore_x, view->restore_y);
+			int restore_x = view->scene_tree->node.x;
+			int restore_y = view->scene_tree->node.y;
+			int restore_width = view->xdg_toplevel->base->geometry.width;
+			int restore_height = view->xdg_toplevel->base->geometry.height;
+			if ((restore_width <= 0 || restore_height <= 0) &&
+				view->xdg_toplevel->base->surface)
+			{
+				restore_width = view->xdg_toplevel->base->surface->current.width;
+				restore_height = view->xdg_toplevel->base->surface->current.height;
+			}
+			if (view->server->layout == COMP_LAYOUT_STACK || view->tile_float)
+			{
+				toplevel_clamp_floating_box_to_workarea(view,
+					&restore_x, &restore_y, &restore_width, &restore_height);
+				wlr_scene_node_set_position(&view->scene_tree->node, restore_x, restore_y);
+			}
+			toplevel_set_maximized_size(view, false, restore_width, restore_height);
 		}
 	}
 	foreign_toplevel_refresh(view);
@@ -2518,6 +2856,15 @@ static void begin_move(struct comp_server *server, struct comp_toplevel *view, b
 	server->grab_view_y = view->scene_tree->node.y;
 }
 
+/** True while either the committed or newest scheduled client state is maximized. */
+static bool toplevel_effectively_maximized(struct comp_toplevel *view)
+{
+	return view && view->xdg_toplevel &&
+		   (view->xdg_toplevel->current.maximized ||
+			view->xdg_toplevel->scheduled.maximized ||
+			view->xdg_toplevel->requested.maximized);
+}
+
 /** True when direct interactive resize is allowed for this toplevel under current layout policy. */
 static bool toplevel_can_direct_resize(struct comp_server *server, struct comp_toplevel *view)
 {
@@ -2526,6 +2873,10 @@ static bool toplevel_can_direct_resize(struct comp_server *server, struct comp_t
 		return false;
 	}
 	if ((server->layout == COMP_LAYOUT_TILE || server->layout == COMP_LAYOUT_SCROLL) && !view->tile_float)
+	{
+		return false;
+	}
+	if (toplevel_effectively_maximized(view))
 	{
 		return false;
 	}
@@ -2677,7 +3028,13 @@ static void toplevel_set_resizing(struct comp_toplevel *view, bool resizing)
 		wlr_xdg_toplevel_set_resizing(view->xdg_toplevel, resizing));
 }
 
-/** Apply client-provided xdg_toplevel min/max constraints without moving the opposite edge. */
+/**
+ * Apply client-provided xdg_toplevel min/max constraints without moving the opposite edge.
+ *
+ * When resizing from left or top, a size clamp must shift the requested origin by the
+ * rejected delta. Otherwise the fixed far edge jumps even though the client only limited
+ * its usable content size.
+ */
 static void toplevel_constrain_resize(struct comp_toplevel *view, uint32_t edges,
 								  int *x, int *y, int *width, int *height)
 {
@@ -2747,12 +3104,21 @@ static void toplevel_update_resize_anchor(struct comp_toplevel *view)
 	if (view->resize_anchor_finishing &&
 		!view->xdg_toplevel->current.resizing && !view->xdg_toplevel->pending.resizing)
 	{
+		/* Wait until both current and pending state are non-resizing. GTK2 bridge clients
+		 * can commit one last resized buffer after the grab has ended; dropping the anchor
+		 * earlier lets that commit pull the left/top edge back to the old position. */
 		view->resize_anchor_active = false;
 		view->resize_anchor_finishing = false;
 	}
 }
 
-/** Apply one compositor resize target in XDG window-geometry coordinates. */
+/**
+ * Apply one compositor resize target in XDG window-geometry coordinates.
+ *
+ * The client configure uses window-geometry size, while the scene node is positioned in
+ * layout coordinates. Left/top anchored resizes keep the scene node fixed until the next
+ * commit reports the new geometry, then toplevel_update_resize_anchor() corrects it.
+ */
 static void toplevel_apply_resize_box(struct comp_toplevel *view, int x, int y, int width, int height)
 {
 	const struct wlr_box geometry = view->xdg_toplevel->base->geometry;
@@ -2784,6 +3150,57 @@ static bool point_in_box(const struct wlr_box *box, double x, double y)
 	}
 	return x >= (double)box->x && x < (double)(box->x + box->width) &&
 		   y >= (double)box->y && y < (double)(box->y + box->height);
+}
+
+/** Clamp a floating toplevel geometry box into the usable output workarea. */
+static void toplevel_clamp_floating_box_to_workarea(struct comp_toplevel *view,
+													int *scene_x, int *scene_y, int *width, int *height)
+{
+	if (!view || !view->xdg_toplevel || !scene_x || !scene_y || !width || !height)
+	{
+		return;
+	}
+	struct comp_output *out = toplevel_preferred_output(view);
+	if (!out || out->layer_workarea.width <= 0 || out->layer_workarea.height <= 0)
+	{
+		return;
+	}
+	struct wlr_box usable = out->layer_workarea;
+	const struct wlr_box geometry = view->xdg_toplevel->base->geometry;
+
+	if (*width > usable.width)
+	{
+		*width = usable.width;
+	}
+	if (*height > usable.height)
+	{
+		*height = usable.height;
+	}
+
+	/* Scene node coordinates include xdg window-geometry offsets. Clamp the visible
+	 * toplevel geometry, then convert the corrected position back to scene space. */
+	int geometry_x = *scene_x + geometry.x;
+	int geometry_y = *scene_y + geometry.y;
+	const int max_x = usable.x + usable.width - *width;
+	const int max_y = usable.y + usable.height - *height;
+	if (geometry_x < usable.x)
+	{
+		geometry_x = usable.x;
+	}
+	else if (geometry_x > max_x)
+	{
+		geometry_x = max_x;
+	}
+	if (geometry_y < usable.y)
+	{
+		geometry_y = usable.y;
+	}
+	else if (geometry_y > max_y)
+	{
+		geometry_y = max_y;
+	}
+	*scene_x = geometry_x - geometry.x;
+	*scene_y = geometry_y - geometry.y;
 }
 
 /** Determine resize edge mask from global cursor coords against toplevel geometry bounds. */
@@ -2903,7 +3320,41 @@ static uint32_t toplevel_effective_resize_edges_at_cursor(struct comp_server *se
 	return toplevel_resize_edges_at_cursor(server, view);
 }
 
-/** Find a toplevel near the cursor whose border ring currently matches resize hit-test. */
+/**
+ * Focused top-level frame under the cursor even when transparent holes expose lower clients.
+ *
+ * xwayland-satellite frames can have transparent titlebar/border regions. Scene hit-testing
+ * then sees the window underneath, but input policy still has to treat the focused frame as
+ * the owner so lower clients cannot steal cursors or pointer focus through those holes.
+ */
+static struct comp_toplevel *focused_toplevel_frame_at_cursor(struct comp_server *server)
+{
+	if (!server || !server->cursor || !server->focused_toplevel)
+	{
+		return NULL;
+	}
+	struct comp_toplevel *focused = server->focused_toplevel;
+	if (focused->workspace != server->current_workspace || focused->minimized ||
+		!toplevel_surface_mapped(focused))
+	{
+		return NULL;
+	}
+	struct wlr_box box;
+	if (!toplevel_get_hit_box(focused, &box) ||
+		!point_in_box(&box, server->cursor->x, server->cursor->y))
+	{
+		return NULL;
+	}
+	return focused;
+}
+
+/**
+ * Find a toplevel near the cursor whose border ring currently matches resize hit-test.
+ *
+ * This deliberately prefers the focused frame before probing scene surfaces. Bridged
+ * decorations can expose lower clients through transparent pixels, but those lower clients
+ * must not receive resize/cursor authority while the pointer is still on the top frame.
+ */
 static struct comp_toplevel *toplevel_near_cursor_resize_edge(struct comp_server *server)
 {
 	if (!server || !server->cursor)
@@ -2913,15 +3364,43 @@ static struct comp_toplevel *toplevel_near_cursor_resize_edge(struct comp_server
 	const double cx = server->cursor->x;
 	const double cy = server->cursor->y;
 
-	/* Prefer the toplevel directly under cursor when it is in a resize edge ring. */
-	struct comp_toplevel *hit = toplevel_at(server, cx, cy, NULL, NULL);
-	if (hit)
+	/* Bridge-decorated frames can contain transparent titlebar/border holes. Scene
+	 * hit-testing may then resolve the client underneath, but the focused top-level
+	 * still owns the visible edge under the pointer and must keep resize/cursor control. */
+	struct comp_toplevel *focused = server->focused_toplevel;
+	if (focused && focused->workspace == server->current_workspace && !focused->minimized &&
+		toplevel_can_direct_resize(server, focused) && toplevel_resize_edges_at(focused, cx, cy))
 	{
-		if (toplevel_can_direct_resize(server, hit) && toplevel_resize_edges_at(hit, cx, cy))
+		return focused;
+	}
+	const bool cursor_inside_focused_frame = focused_toplevel_frame_at_cursor(server) != NULL;
+
+	/* Prefer the visible surface under the cursor. Layer-shell surfaces, popups, and
+	 * client-owned CSD controls must not be treated as empty space just because they
+	 * do not resolve to a managed toplevel. Otherwise panels such as sfwbar can lose
+	 * pointer focus while hovering over a maximized window's hidden resize ring. */
+	double sx, sy;
+	struct wlr_surface *surface = surface_at(server, cx, cy, &sx, &sy);
+	if (surface)
+	{
+		struct wlr_surface *root = wlr_surface_get_root_surface(surface);
+		struct comp_toplevel *hit;
+		wl_list_for_each(hit, &server->toplevels, link)
 		{
-			return hit;
+			if (hit->xdg_toplevel && hit->xdg_toplevel->base->surface == root)
+			{
+				if (cursor_inside_focused_frame && hit != focused)
+				{
+					return NULL;
+				}
+				if (toplevel_can_direct_resize(server, hit) && toplevel_resize_edges_at(hit, cx, cy))
+				{
+					return hit;
+				}
+				return NULL;
+			}
 		}
-		/* Do not probe lower windows when the cursor is already over a topmost surface. */
+		/* Do not probe lower windows when any non-toplevel surface owns the pointer position. */
 		return NULL;
 	}
 
@@ -5202,6 +5681,42 @@ static void handle_new_pointer_constraint(struct wl_listener *listener, void *da
 	}
 }
 
+/** Fill stable debug labels for a surface's root protocol role. */
+static void pointer_debug_describe_surface(struct wlr_surface *surface,
+										   const char **role, const char **name, const char **title)
+{
+	*role = "none";
+	*name = "";
+	*title = "";
+	if (!surface)
+	{
+		return;
+	}
+	struct wlr_surface *root = wlr_surface_get_root_surface(surface);
+	struct wlr_layer_surface_v1 *layer = wlr_layer_surface_v1_try_from_wlr_surface(root);
+	if (layer)
+	{
+		*role = "layer";
+		*name = layer->namespace ? layer->namespace : "";
+		return;
+	}
+	struct wlr_xdg_toplevel *toplevel = wlr_xdg_toplevel_try_from_wlr_surface(root);
+	if (toplevel)
+	{
+		*role = "xdg";
+		*name = toplevel->app_id ? toplevel->app_id : "";
+		*title = toplevel->title ? toplevel->title : "";
+		return;
+	}
+	struct wlr_xdg_popup *popup = wlr_xdg_popup_try_from_wlr_surface(root);
+	if (popup)
+	{
+		*role = "popup";
+		return;
+	}
+	*role = "surface";
+}
+
 /** Pointer-focus change callback: activate/deactivate constraints for new focused surface. */
 static void seat_pointer_focus_change(struct wl_listener *listener, void *data)
 {
@@ -5211,6 +5726,28 @@ static void seat_pointer_focus_change(struct wl_listener *listener, void *data)
 		return;
 	}
 	struct wlr_seat_pointer_focus_change_event *ev = data;
+	if (pointer_focus_debug_logs_enabled)
+	{
+		const char *old_role, *old_name, *old_title;
+		const char *new_role, *new_name, *new_title;
+		pointer_debug_describe_surface(ev->old_surface, &old_role, &old_name, &old_title);
+		pointer_debug_describe_surface(ev->new_surface, &new_role, &new_name, &new_title);
+		wlr_log(WLR_INFO,
+				"ptrdbg:focus old=%s name='%s' title='%s' new=%s name='%s' title='%s' sx=%.1f sy=%.1f cursor=%.1f,%.1f",
+				old_role, old_name, old_title, new_role, new_name, new_title,
+				ev->sx, ev->sy, server->cursor ? server->cursor->x : 0.0,
+				server->cursor ? server->cursor->y : 0.0);
+	}
+	if (layer_hit_debug_logs_enabled)
+	{
+		const char *old_role, *old_name, *old_title;
+		const char *new_role, *new_name, *new_title;
+		pointer_debug_describe_surface(ev->old_surface, &old_role, &old_name, &old_title);
+		pointer_debug_describe_surface(ev->new_surface, &new_role, &new_name, &new_title);
+		layer_debug_log_hit_context(server, old_role, new_role,
+									server->cursor ? server->cursor->x : 0.0,
+									server->cursor ? server->cursor->y : 0.0);
+	}
 	struct wlr_pointer_constraint_v1 *constraint =
 		wlr_pointer_constraints_v1_constraint_for_surface(server->pointer_constraints,
 														  ev->new_surface, server->seat);
@@ -5367,6 +5904,34 @@ static void process_cursor_motion(struct comp_server *server, uint32_t time_msec
 	struct wlr_surface *surface = surface_at(server, server->cursor->x, server->cursor->y, &sx, &sy);
 	if (surface)
 	{
+		struct comp_toplevel *focused_frame = focused_toplevel_frame_at_cursor(server);
+		if (focused_frame)
+		{
+			struct wlr_surface *root = wlr_surface_get_root_surface(surface);
+			if (focused_frame->xdg_toplevel && focused_frame->xdg_toplevel->base->surface != root &&
+				wlr_xdg_toplevel_try_from_wlr_surface(root))
+			{
+				/* Transparent titlebar/frame holes must not transfer pointer ownership to
+				 * clients below the focused window; otherwise their text/hand cursors leak
+				 * through and hide Morph's resize/default cursor policy for the top frame. */
+				wlr_cursor_set_xcursor(server->cursor, server->cursor_mgr, "default");
+				wlr_seat_pointer_notify_clear_focus(server->seat);
+				return;
+			}
+		}
+		if (blocking_layer_surface_at(server, server->cursor->x, server->cursor->y) &&
+			pointer_focus_is_layer_surface(server))
+		{
+			struct wlr_surface *root = wlr_surface_get_root_surface(surface);
+			if (!wlr_layer_surface_v1_try_from_wlr_surface(root))
+			{
+				/* Keep pointer ownership on panels while the cursor moves through their
+				 * guarded edge band. This avoids layer-shell task buttons losing focus to a
+				 * normal window just underneath sparse or transparent panel pixels, while
+				 * still allowing real panel surface pixels to receive motion normally. */
+				return;
+			}
+		}
 		/* Clearing pointer focus while Morph owns a resize edge prevents a bridged client
 		 * from replacing that cursor. Restore a neutral image before re-entering the surface;
 		 * older X11 toolkits do not necessarily submit another cursor request until a click. */
@@ -5400,6 +5965,14 @@ static void process_cursor_motion(struct comp_server *server, uint32_t time_msec
 			wlr_cursor_set_xcursor(server->cursor, server->cursor_mgr, cursor_name);
 		}
 		wlr_seat_pointer_notify_clear_focus(server->seat);
+		return;
+	}
+	if (blocking_layer_surface_at(server, server->cursor->x, server->cursor->y))
+	{
+		/* Some panels draw hoverable controls inside transparent or sparse input
+		 * regions. If scene hit-testing finds no concrete buffer at this exact
+		 * coordinate, keep the existing pointer focus instead of sending a leave
+		 * that makes the panel immediately repaint back and forth. */
 		return;
 	}
 
@@ -5655,6 +6228,24 @@ static void seat_request_cursor(struct wl_listener *listener, void *data)
 		toplevel_effective_resize_edges_at_cursor(server, v))
 	{
 		return;
+	}
+	struct comp_toplevel *focused_frame = focused_toplevel_frame_at_cursor(server);
+	if (focused_frame)
+	{
+		double sx, sy;
+		struct wlr_surface *surface = surface_at(server, server->cursor->x, server->cursor->y, &sx, &sy);
+		if (surface)
+		{
+			struct wlr_surface *root = wlr_surface_get_root_surface(surface);
+			if (focused_frame->xdg_toplevel && focused_frame->xdg_toplevel->base->surface != root &&
+				wlr_xdg_toplevel_try_from_wlr_surface(root))
+			{
+				/* A lower client may request a text/hand cursor after scene hit-testing sees it
+				 * through a transparent bridged frame. Reject that request so the focused
+				 * frame keeps Morph's resize/default cursor until the pointer really leaves. */
+				return;
+			}
+		}
 	}
 	struct wlr_seat_pointer_request_set_cursor_event *ev = data;
 	wlr_cursor_set_surface(server->cursor, ev->surface, ev->hotspot_x, ev->hotspot_y);
@@ -6095,6 +6686,19 @@ int main(int argc, char **argv)
 	{
 		const char *e = getenv("MORPH_DEBUG_XDG");
 		xdg_debug_logs_enabled = e && e[0] && strcmp(e, "0") != 0;
+	}
+	{
+		const char *e = getenv("MORPH_DEBUG_XDG_COMMITS");
+		xdg_commit_debug_logs_enabled = xdg_debug_logs_enabled &&
+			e && e[0] && strcmp(e, "0") != 0;
+	}
+	{
+		const char *e = getenv("MORPH_DEBUG_POINTER_FOCUS");
+		pointer_focus_debug_logs_enabled = e && e[0] && strcmp(e, "0") != 0;
+	}
+	{
+		const char *e = getenv("MORPH_DEBUG_LAYER_HIT");
+		layer_hit_debug_logs_enabled = e && e[0] && strcmp(e, "0") != 0;
 	}
 	configure_bridge_resize_rate_from_env();
 	/*

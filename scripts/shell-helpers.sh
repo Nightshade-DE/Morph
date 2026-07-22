@@ -425,44 +425,34 @@ line_count_or_zero() {
 # Runtime capture helpers
 # ==============================================================================
 
-# Run morph and mirror stdout/stderr into the startup log via FIFO+tee.
+# Run morph and append stdout/stderr into the startup log.
 # Expects LOG_DIR, MORPH_STARTUP_LOG_FILE, MORPH_BIN, CONFIG_FILE, LOG_FILE,
 # CRASH_LOG_FILE, MORPH_LOG_LEVEL and MORPH_ENABLE_CRASH_HANDLER.
 run_morph_with_capture() {
-    # Use a FIFO + tee so logs are persisted while preserving morph's exit code.
-    fifo_path=$(mktemp -u "$LOG_DIR/morph-output.XXXXXX.fifo") || return 1
-    if ! mkfifo "$fifo_path"; then
-        log_startup ERROR "Failed to create output capture FIFO at $fifo_path."
-        return 1
-    fi
-
-    tee -a "$MORPH_STARTUP_LOG_FILE" <"$fifo_path" &
-    tee_pid=$!
-
+    # Avoid FIFO+tee here. The compositor starts helper processes such as
+    # xwayland-satellite and portals; if any child inherits the FIFO write end,
+    # tee never receives EOF and the display-manager session remains stuck after
+    # Morph has already exited. A regular append-only log fd cannot block logout.
     morph_bin="${MORPH_BIN:?MORPH_BIN is not set}"
     level="${MORPH_LOG_LEVEL:-error}"
     enable_crash="${MORPH_ENABLE_CRASH_HANDLER:-0}"
     if [ "$enable_crash" = "1" ]; then
         if [ -n "${CONFIG_FILE:-}" ]; then
-            "$morph_bin" -c "$CONFIG_FILE" --log-level "$level" --log-file "$LOG_FILE" --crash-log "$CRASH_LOG_FILE" >"$fifo_path" 2>&1
+            "$morph_bin" -c "$CONFIG_FILE" --log-level "$level" --log-file "$LOG_FILE" --crash-log "$CRASH_LOG_FILE" >>"$MORPH_STARTUP_LOG_FILE" 2>&1
         else
             # Omit -c entirely only when the launcher intentionally reached the
             # no-config builtin fallback path. Any explicit or resolved config
             # file is still passed through -c above; nothing is ignored here.
-            "$morph_bin" --log-level "$level" --log-file "$LOG_FILE" --crash-log "$CRASH_LOG_FILE" >"$fifo_path" 2>&1
+            "$morph_bin" --log-level "$level" --log-file "$LOG_FILE" --crash-log "$CRASH_LOG_FILE" >>"$MORPH_STARTUP_LOG_FILE" 2>&1
         fi
     else
         if [ -n "${CONFIG_FILE:-}" ]; then
-            "$morph_bin" -c "$CONFIG_FILE" --log-level "$level" --log-file "$LOG_FILE" --no-crash-handler >"$fifo_path" 2>&1
+            "$morph_bin" -c "$CONFIG_FILE" --log-level "$level" --log-file "$LOG_FILE" --no-crash-handler >>"$MORPH_STARTUP_LOG_FILE" 2>&1
         else
-            "$morph_bin" --log-level "$level" --log-file "$LOG_FILE" --no-crash-handler >"$fifo_path" 2>&1
+            "$morph_bin" --log-level "$level" --log-file "$LOG_FILE" --no-crash-handler >>"$MORPH_STARTUP_LOG_FILE" 2>&1
         fi
     fi
-    cmd_status=$?
-
-    wait "$tee_pid"
-    rm -f "$fifo_path"
-    return "$cmd_status"
+    return $?
 }
 
 # Error summary helpers
