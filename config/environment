@@ -21,6 +21,17 @@ MORPH_DBG=0
 
 # Optional XDG lifecycle debug logs in compositor (0=off, 1=on)
 MORPH_DEBUG_XDG=0
+# Optional per-commit XDG logs; requires MORPH_DEBUG_XDG=1 and is very noisy.
+#MORPH_DEBUG_XDG_COMMITS=0
+# Optional pointer focus enter/leave diagnostics for layer-shell hover bugs.
+#MORPH_DEBUG_POINTER_FOCUS=0
+# Optional layer-shell geometry diagnostics around panel hover/focus transitions.
+#MORPH_DEBUG_LAYER_HIT=0
+# Optional key event diagnostics for keybind debugging.
+#MORPH_LOG_KEYS=0
+# Optional legacy X11 bridge resize rate override. Lower values reduce flicker;
+# higher values feel more responsive but can make old toolkits fall behind.
+#MORPH_BRIDGE_RESIZE_HZ=17
 
 # wlroots/log verbosity helpers
 WAYLAND_DEBUG=0
@@ -30,7 +41,7 @@ WLR_LOGTS=0
 # Prefer system runtime libraries when available.
 # Uncomment when morph-session runs from a display manager and cannot resolve
 # libwlroots-0.19.so without shell-provided LD_LIBRARY_PATH.
-#LD_LIBRARY_PATH="$HOME/.local/lib/x86_64-linux-gnu:$HOME/.local/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+#export LD_LIBRARY_PATH="$HOME/.local/lib/x86_64-linux-gnu:$HOME/.local/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
 # Java/X11 compatibility helpers
 _JAVA_AWT_WM_NONREPARENTING=1

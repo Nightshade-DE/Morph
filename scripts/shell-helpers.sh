@@ -22,14 +22,32 @@ log_message() {
     printf '[%s] %s: %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$level" "$msg" >> "$CURRENT_LOG_FILE"
 }
 
+# Morph logger wrapper.
+log_morph() {
+    level="$1"
+    shift
+    msg="$*"
+
+    # Child process output is already tagged by launch_logged(); only untagged
+    # launcher messages get the explicit Morph source prefix.
+    case "$msg" in
+        \[*)
+            log_message "$level" "$msg"
+            ;;
+        *)
+            log_message "$level" "[morph] $msg"
+            ;;
+    esac
+}
+
 # Startup logger wrapper.
 log_startup() {
-    log_message "$@"
+    log_morph "$@"
 }
 
 # Shutdown logger wrapper.
 log_shutdown() {
-    log_message "$@"
+    log_morph "$@"
 }
 
 # Return shell truth for common environment flag values.
@@ -183,7 +201,11 @@ morph_managed_config_dir() {
 
 # Return the user config directory that can override managed runtime files.
 morph_user_config_dir() {
-    printf '%s\n' "${XDG_CONFIG_HOME:-$HOME/.config}/morph"
+    if [ -n "${MORPH_USER_CONFIG_DIR:-}" ]; then
+        printf '%s\n' "$MORPH_USER_CONFIG_DIR"
+    else
+        printf '%s\n' "${XDG_CONFIG_HOME:-$HOME/.config}/morph"
+    fi
 }
 
 # Return the last configured hook command from a config file's [hooks] section.
@@ -297,12 +319,12 @@ morph_run_optional_user_hook() {
 
     if [ -n "$hook_cmd" ]; then
         # Resolve path-like hook entries first so config values such as
-        # ${MORPH_SYSTEM_CONFIG_DIR}/startup.sh and ~/.config/... keep working
+        # ${MORPH_USER_CONFIG_DIR}/startup.sh and ~/.config/... keep working
         # as sourceable hook files instead of being downgraded to sh -c calls.
         hook_cmd_path="$(morph_resolve_hook_path "$hook_cmd" || true)"
 
         if [ -n "$hook_cmd_path" ] && [ -r "$hook_cmd_path" ]; then
-            log_message INFO "Sourcing user $hook_kind hook file from config: $hook_cmd_path"
+            log_morph INFO "Sourcing user $hook_kind hook file from config: $hook_cmd_path"
             # shellcheck disable=SC1090
             . "$hook_cmd_path"
             return $?
@@ -310,9 +332,9 @@ morph_run_optional_user_hook() {
 
         # Config-provided commands have highest priority because they are the
         # explicit lifecycle contract selected by the active config file.
-        log_message INFO "Running user $hook_kind hook from config."
+        log_morph INFO "Running user $hook_kind hook from config."
         if ! sh -c "$hook_cmd"; then
-            log_message WARN "User $hook_kind hook from config exited with a non-zero status."
+            log_morph WARN "User $hook_kind hook from config exited with a non-zero status."
             return 1
         fi
         return 0
@@ -322,13 +344,13 @@ morph_run_optional_user_hook() {
         # Source the fallback hook in the current shell so helper functions stay
         # available even when the user relies on the conventional XDG path
         # instead of configuring an explicit hook command in morph.conf.
-        log_message INFO "Sourcing default user $hook_kind hook: $hook_path"
+        log_morph INFO "Sourcing default user $hook_kind hook: $hook_path"
         # shellcheck disable=SC1090
         . "$hook_path"
         return $?
     fi
 
-    log_message INFO "No user $hook_kind hook configured or found."
+    log_morph INFO "No user $hook_kind hook configured or found."
     return 0
 }
 

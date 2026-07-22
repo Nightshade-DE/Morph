@@ -66,6 +66,7 @@ when = [ "$MORPH_LAYOUT" = tile ]
 ## Section `[hooks]` (optional)
 
 A single **`[hooks]`** block may define shell snippets run at lifecycle points. Each value is passed to **`/bin/sh -c`** (same trust model as **`exec`**).
+Use **`${MORPH_USER_CONFIG_DIR}`** for user hook files and **`${MORPH_SYSTEM_CONFIG_DIR}`** only for managed/system hook files; in release sessions the system directory normally resolves to `/etc/morph`.
 
 | Key | When it runs |
 |-----|----------------|

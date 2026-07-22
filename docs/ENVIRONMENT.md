@@ -100,6 +100,19 @@ Note:
 Optional path to an environment override file.
 If set and readable, it is sourced before launcher defaults are applied.
 
+<a id="morph-user-config-dir"></a>
+### MORPH_USER_CONFIG_DIR
+
+Runtime path to Morph's user configuration directory.
+
+- default: `${XDG_CONFIG_HOME:-$HOME/.config}/morph`
+- exported by `morph-session` and `morph-session_dbg`
+
+Use this in `[hooks]` when you want lifecycle hooks to follow the active user
+configuration directory, for example `${MORPH_USER_CONFIG_DIR}/startup.sh`.
+`MORPH_SYSTEM_CONFIG_DIR` is reserved for managed runtime files such as
+`/etc/morph` in release sessions.
+
 <a id="ld-library-path"></a>
 ### LD_LIBRARY_PATH
 
@@ -117,6 +130,8 @@ Recommended setup:
 Runtime behavior in `morph-session`:
 
 - when `LD_LIBRARY_PATH` is already set, the wrapper keeps it unchanged
+- when an environment file assigns `LD_LIBRARY_PATH`, the wrapper exports it
+  before starting Morph
 - when `LD_LIBRARY_PATH` is empty and local library directories exist,
   the wrapper sets it automatically as a fallback and writes a warning
   to the startup log
@@ -133,10 +148,17 @@ Optional verbose XDG lifecycle debug flag passed to **Morph**.
 
 Use this when debugging early xdg_toplevel requests/state transitions.
 
-Per-commit XDG logging is intentionally not included because clients such as
-VS Code can commit often enough to overload live sessions with synchronous log
-I/O. Set `MORPH_DEBUG_XDG_COMMITS=1` together with `MORPH_DEBUG_XDG=1` only when
-you explicitly need every `xdg_surface` commit in the log.
+<a id="morph-debug-xdg-commits"></a>
+### MORPH_DEBUG_XDG_COMMITS
+
+Optional per-commit XDG trace. Requires `MORPH_DEBUG_XDG=1`.
+
+- unset or `0`: disabled
+- non-empty and not `0`: enabled
+
+Keep this disabled unless you explicitly need every `xdg_surface` commit in the
+log. Clients such as VS Code can commit often enough to overload live sessions
+with synchronous log I/O.
 
 <a id="morph-debug-pointer-focus"></a>
 ### MORPH_DEBUG_POINTER_FOCUS
@@ -160,6 +182,17 @@ Optional layer-shell hitbox trace for diagnosing panel hover flicker.
 Use this together with `MORPH_DEBUG_POINTER_FOCUS` when a layer-shell panel loses
 hover focus to an adjacent or maximized toplevel. Logs include layer surface
 bounds, guarded bounds, exclusive zone, anchor flags, and current workarea.
+
+<a id="morph-log-keys"></a>
+### MORPH_LOG_KEYS
+
+Optional key-event trace for diagnosing compositor keybind handling.
+
+- unset or `0`: disabled
+- non-empty and not `0`: enabled
+
+Use this only while debugging keyboard grabs or keybind matching. It is not
+needed for normal runtime logging.
 
 <a id="morph-bridge-resize-hz"></a>
 ### MORPH_BRIDGE_RESIZE_HZ

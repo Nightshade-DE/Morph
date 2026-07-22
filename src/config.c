@@ -476,6 +476,33 @@ static const char *managed_hook_dir(void) {
 	return "/etc/morph";
 }
 
+/** Ensure managed shell hooks can expand user-config-relative hook paths. */
+static void ensure_user_config_dir_env(void) {
+	const char *dir = getenv("MORPH_USER_CONFIG_DIR");
+	if (dir && dir[0]) {
+		return;
+	}
+
+	const char *xdg = getenv("XDG_CONFIG_HOME");
+	const char *home = getenv("HOME");
+	char path[PATH_MAX];
+	if (xdg && xdg[0]) {
+		if (snprintf(path, sizeof(path), "%s/morph", xdg) >= (int)sizeof(path)) {
+			wlr_log(WLR_ERROR, "MORPH_USER_CONFIG_DIR path is too long for XDG_CONFIG_HOME");
+			return;
+		}
+	} else if (home && home[0]) {
+		if (snprintf(path, sizeof(path), "%s/.config/morph", home) >= (int)sizeof(path)) {
+			wlr_log(WLR_ERROR, "MORPH_USER_CONFIG_DIR path is too long for HOME");
+			return;
+		}
+	} else {
+		wlr_log(WLR_ERROR, "Cannot derive MORPH_USER_CONFIG_DIR without XDG_CONFIG_HOME or HOME");
+		return;
+	}
+	setenv("MORPH_USER_CONFIG_DIR", path, 1);
+}
+
 /** Export the user hook commands so managed scripts can invoke them in-order. */
 static void export_managed_hook_env(const struct comp_config *cfg) {
 	if (!cfg) {
@@ -483,6 +510,7 @@ static void export_managed_hook_env(const struct comp_config *cfg) {
 	}
 	/* Managed mode keeps config parsing inside the compositor, but the shell
 	 * runtime still needs the resolved hook snippets for the user phase. */
+	ensure_user_config_dir_env();
 	if (cfg->hook_startup && cfg->hook_startup[0]) {
 		setenv("MORPH_USER_STARTUP_HOOK_CMD", cfg->hook_startup, 1);
 	} else {
@@ -533,6 +561,7 @@ void comp_config_run_startup(const struct comp_config *cfg) {
 	if (!cfg) {
 		return;
 	}
+	ensure_user_config_dir_env();
 	if (managed_hooks_enabled()) {
 		/* Managed startup wraps the configured user hook so runtime preparation
 		 * happens before user autostarts in every launcher-controlled session. */
@@ -547,6 +576,7 @@ void comp_config_run_reload(const struct comp_config *cfg) {
 	if (!cfg) {
 		return;
 	}
+	ensure_user_config_dir_env();
 	if (managed_hooks_enabled()) {
 		/* Reload keeps the current session alive, so the managed layer only
 		 * provides ordering and helper functions around the user reload hook. */
@@ -561,6 +591,7 @@ void comp_config_run_shutdown(const struct comp_config *cfg) {
 	if (!cfg) {
 		return;
 	}
+	ensure_user_config_dir_env();
 	if (managed_hooks_enabled()) {
 		/* Shutdown stays synchronous so the compositor waits for user teardown
 		 * and managed cleanup before returning control to the launcher. */

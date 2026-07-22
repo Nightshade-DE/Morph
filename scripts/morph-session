@@ -9,6 +9,7 @@ MORPH_SYSTEM_HOOK_DIR_DEFAULT="/etc/morph"
 MORPH_SYSTEM_CONFIG_DIR_DEFAULT="/etc/morph"
 MORPH_SYSTEM_CONFIG_FILE_DEFAULT="/etc/morph/morph.conf"
 MORPH_BIN_DEFAULT="/usr/bin/morph"
+MORPH_USER_CONFIG_DIR_DEFAULT="${XDG_CONFIG_HOME:-$HOME/.config}/morph"
 
 # Capture one caller-provided value so sourced environment files cannot silently
 # override the highest-priority layer.
@@ -37,9 +38,12 @@ morph_restore_caller_override() {
 # Preserve caller overrides before lower-priority environment files are sourced.
 for var_name in \
     WAYLAND_DEBUG WLR_LOGTS _JAVA_AWT_WM_NONREPARENTING WMNAME \
+    LD_LIBRARY_PATH \
     MORPH_X11 MORPH_X11_DISPLAY MORPH_DBG MORPH_CONFIG \
     MORPH_LOG_DIR MORPH_SYSTEM_HOOK_DIR MORPH_SYSTEM_CONFIG_DIR \
-    MORPH_SYSTEM_CONFIG_FILE MORPH_BIN MORPH_DEBUG_XDG MORPH_DEBUG_POINTER_FOCUS MORPH_DEBUG_LAYER_HIT MORPH_BRIDGE_RESIZE_HZ \
+    MORPH_SYSTEM_CONFIG_FILE MORPH_BIN MORPH_ALLOW_BUILTIN_FALLBACK \
+    MORPH_DEBUG_XDG MORPH_DEBUG_XDG_COMMITS MORPH_DEBUG_POINTER_FOCUS MORPH_DEBUG_LAYER_HIT \
+    MORPH_BRIDGE_RESIZE_HZ MORPH_LOG_KEYS \
     XKB_DEFAULT_LAYOUT XKB_DEFAULT_MODEL XKB_DEFAULT_VARIANT XKB_DEFAULT_OPTIONS
 do
     morph_capture_caller_override "$var_name"
@@ -48,7 +52,7 @@ done
 SYSTEM_CONFIG_DIR_BOOTSTRAP="${MORPH_SYSTEM_CONFIG_DIR:-$MORPH_SYSTEM_CONFIG_DIR_DEFAULT}"
 SYSTEM_ENV_FILE_DEFAULT="$SYSTEM_CONFIG_DIR_BOOTSTRAP/environment"
 SYSTEM_ENV_FILE="${MORPH_ENV_FILE:-$SYSTEM_ENV_FILE_DEFAULT}"
-USER_ENV_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/morph/environment"
+USER_ENV_FILE="$MORPH_USER_CONFIG_DIR_DEFAULT/environment"
 ENV_FILE_NOTE="defaults-only (no user or system environment file found)"
 
 if [ -f "${SYSTEM_ENV_FILE}" ]; then
@@ -67,9 +71,12 @@ fi
 
 for var_name in \
     WAYLAND_DEBUG WLR_LOGTS _JAVA_AWT_WM_NONREPARENTING WMNAME \
+    LD_LIBRARY_PATH \
     MORPH_X11 MORPH_X11_DISPLAY MORPH_DBG MORPH_CONFIG \
     MORPH_LOG_DIR MORPH_SYSTEM_HOOK_DIR MORPH_SYSTEM_CONFIG_DIR \
-    MORPH_SYSTEM_CONFIG_FILE MORPH_BIN MORPH_DEBUG_XDG MORPH_DEBUG_POINTER_FOCUS MORPH_DEBUG_LAYER_HIT MORPH_BRIDGE_RESIZE_HZ \
+    MORPH_SYSTEM_CONFIG_FILE MORPH_BIN MORPH_ALLOW_BUILTIN_FALLBACK \
+    MORPH_DEBUG_XDG MORPH_DEBUG_XDG_COMMITS MORPH_DEBUG_POINTER_FOCUS MORPH_DEBUG_LAYER_HIT \
+    MORPH_BRIDGE_RESIZE_HZ MORPH_LOG_KEYS \
     XKB_DEFAULT_LAYOUT XKB_DEFAULT_MODEL XKB_DEFAULT_VARIANT XKB_DEFAULT_OPTIONS
 do
     morph_restore_caller_override "$var_name"
@@ -139,8 +146,13 @@ export WMNAME
 export MORPH_MANAGED_HOOKS=1
 export MORPH_SYSTEM_HOOK_DIR
 export MORPH_SYSTEM_CONFIG_DIR
+export MORPH_USER_CONFIG_DIR="$MORPH_USER_CONFIG_DIR_DEFAULT"
 export MORPH_BIN
 export MORPH_HELPER_LIB="$MORPH_SYSTEM_HOOK_DIR/shell-helpers.sh"
+
+# Environment files are sourced by this shell, so plain assignments there would
+# otherwise stay shell-local. Export the resolved runtime linker path explicitly.
+if [ -n "${LD_LIBRARY_PATH+x}" ]; then export LD_LIBRARY_PATH; fi
 
 # Forward optional XKB overrides from environment file/caller into morph.
 # Keep unset values untouched so libxkbcommon can use system defaults.
@@ -151,9 +163,12 @@ if [ -n "${XKB_DEFAULT_OPTIONS+x}" ]; then export XKB_DEFAULT_OPTIONS; fi
 
 # Optional compositor XDG lifecycle debug flag.
 if [ -n "${MORPH_DEBUG_XDG+x}" ]; then export MORPH_DEBUG_XDG; fi
+if [ -n "${MORPH_DEBUG_XDG_COMMITS+x}" ]; then export MORPH_DEBUG_XDG_COMMITS; fi
 if [ -n "${MORPH_DEBUG_POINTER_FOCUS+x}" ]; then export MORPH_DEBUG_POINTER_FOCUS; fi
 if [ -n "${MORPH_DEBUG_LAYER_HIT+x}" ]; then export MORPH_DEBUG_LAYER_HIT; fi
 if [ -n "${MORPH_BRIDGE_RESIZE_HZ+x}" ]; then export MORPH_BRIDGE_RESIZE_HZ; fi
+if [ -n "${MORPH_LOG_KEYS+x}" ]; then export MORPH_LOG_KEYS; fi
+if [ -n "${MORPH_ALLOW_BUILTIN_FALLBACK+x}" ]; then export MORPH_ALLOW_BUILTIN_FALLBACK; fi
 
 
 # Load shared helper functions before first use.
@@ -165,7 +180,7 @@ if [ -n "${MORPH_BRIDGE_RESIZE_HZ+x}" ]; then export MORPH_BRIDGE_RESIZE_HZ; fi
 # ==============================================================================
 # Use XDG state path by default for runtime logs.
 CONFIG_NOTE=""
-USER_CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/morph/morph.conf"
+USER_CONFIG_FILE="$MORPH_USER_CONFIG_DIR/morph.conf"
 
 if [ -n "${MORPH_CONFIG:-}" ]; then
     if [ ! -r "$MORPH_CONFIG" ]; then
@@ -353,29 +368,36 @@ log_startup INFO "Cleared shutdown list file."
 
 # Startup Summary
 # ==============================================================================
+log_summary() {
+    label="$1"
+    value="$2"
+    log_startup INFO "$(printf '%-33s%s' "$label:" "$value")"
+}
+
 log_startup INFO "Runtime summary (release-relevant):"
 log_startup INFO "--------------------------------------------------------------------------------"
-log_startup INFO "Environment source:           $ENV_FILE_NOTE"
-log_startup INFO "Selected session mode:        $SESSION_MODE_NOTE"
-log_startup INFO "X11 probe details:            $X11_PROBE_NOTE"
-log_startup INFO "Config file path:             $CONFIG_FILE ($CONFIG_NOTE)"
-log_startup INFO "Builtin fallback enabled:     ${MORPH_ALLOW_BUILTIN_FALLBACK:-0}"
-log_startup INFO "Managed hooks enabled:        $MORPH_MANAGED_HOOKS"
-log_startup INFO "Managed hook directory:       $MORPH_SYSTEM_HOOK_DIR"
-log_startup INFO "Managed config directory:     $MORPH_SYSTEM_CONFIG_DIR"
-log_startup INFO "Compositor binary:            $MORPH_BIN"
-log_startup INFO "WLR_BACKENDS:                 $WLR_BACKENDS..."
-log_startup INFO "WLR_WL_SOCKET:                ${WLR_WL_SOCKET:-unset}"
-log_startup INFO "MORPH_DBG:                $MORPH_DBG"
-log_startup INFO "MORPH_LOG_LEVEL:          $MORPH_LOG_LEVEL"
-log_startup INFO "Crash handler enabled:        $MORPH_ENABLE_CRASH_HANDLER"
-log_startup INFO "MORPH_X11:                $MORPH_X11"
-log_startup INFO "MORPH_X11_DISPLAY:        ${MORPH_X11_DISPLAY:-auto (:2..:99)}"
-log_startup INFO "Log file path:                $LOG_FILE"
-log_startup INFO "Crash log file path:          $CRASH_LOG_FILE"
-log_startup INFO "Startup log file:             $MORPH_STARTUP_LOG_FILE"
-log_startup INFO "Shutdown log file:            $MORPH_SHUTDOWN_LOG_FILE"
-log_startup INFO "Shutdown list file:           $MORPH_SHUTDOWN_LIST"
+log_summary "Environment source" "$ENV_FILE_NOTE"
+log_summary "Selected session mode" "$SESSION_MODE_NOTE"
+log_summary "X11 probe details" "$X11_PROBE_NOTE"
+log_summary "Config file path" "$CONFIG_FILE ($CONFIG_NOTE)"
+log_summary "Builtin fallback enabled" "${MORPH_ALLOW_BUILTIN_FALLBACK:-0}"
+log_summary "Managed hooks enabled" "$MORPH_MANAGED_HOOKS"
+log_summary "Managed system hook directory" "$MORPH_SYSTEM_HOOK_DIR"
+log_summary "Managed system config directory" "$MORPH_SYSTEM_CONFIG_DIR"
+log_summary "User config directory" "$MORPH_USER_CONFIG_DIR"
+log_summary "Compositor binary" "$MORPH_BIN"
+log_summary "WLR_BACKENDS" "$WLR_BACKENDS..."
+log_summary "WLR_WL_SOCKET" "${WLR_WL_SOCKET:-unset}"
+log_summary "MORPH_DBG" "$MORPH_DBG"
+log_summary "MORPH_LOG_LEVEL" "$MORPH_LOG_LEVEL"
+log_summary "Crash handler enabled" "$MORPH_ENABLE_CRASH_HANDLER"
+log_summary "MORPH_X11" "$MORPH_X11"
+log_summary "MORPH_X11_DISPLAY" "${MORPH_X11_DISPLAY:-auto (:2..:99)}"
+log_summary "Log file path" "$LOG_FILE"
+log_summary "Crash log file path" "$CRASH_LOG_FILE"
+log_summary "Startup log file" "$MORPH_STARTUP_LOG_FILE"
+log_summary "Shutdown log file" "$MORPH_SHUTDOWN_LOG_FILE"
+log_summary "Shutdown list file" "$MORPH_SHUTDOWN_LIST"
 
 if [ -n "$MORPH_DBG_NOTE" ]; then
     log_startup WARN "$MORPH_DBG_NOTE"
@@ -393,10 +415,10 @@ fi
 if [ "$MORPH_DBG" -ge 1 ]; then
     log_startup INFO "Debug summary:"
     log_startup INFO "--------------------------------------------------------------------------------"
-    log_startup INFO "WAYLAND_DEBUG:                $WAYLAND_DEBUG"
-    log_startup INFO "WLR_LOGTS:                    $WLR_LOGTS"
-    log_startup INFO "_JAVA_AWT_WM_NONREPARENTING:  $_JAVA_AWT_WM_NONREPARENTING"
-    log_startup INFO "WMNAME:                       $WMNAME"
+    log_summary "WAYLAND_DEBUG" "$WAYLAND_DEBUG"
+    log_summary "WLR_LOGTS" "$WLR_LOGTS"
+    log_summary "_JAVA_AWT_WM_NONREPARENTING" "$_JAVA_AWT_WM_NONREPARENTING"
+    log_summary "WMNAME" "$WMNAME"
 fi
 
 if morph_env_flag_is_enabled "${MORPH_RESOLVE_ONLY:-0}"; then

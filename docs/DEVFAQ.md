@@ -148,7 +148,32 @@ Interpretation:
 - If **Morph** exits with code 0 and no follow-up fatal signal/assertion appears, this line is considered harmless.
 - Investigate further only if it occurs repeatedly during normal runtime or is followed by new crashes.
 
-## 11) Why does yEd / some Java apps only show a close button?
+## 11) Runtime shutdown logs `Io error: Broken pipe` followed by a Rust panic
+
+This can appear when **xwayland-satellite** exits after **Morph** has already torn down the Wayland side of the session.
+
+Example:
+
+```text
+Io error: Broken pipe (os error 32)
+
+thread 'main' panicked at /usr/src/packages/BUILD/src/server/mod.rs:799:79:
+called `Option::unwrap()` on a `None` value
+```
+
+Context:
+
+- The message comes from **xwayland-satellite**, not from **Morph**'s C logger.
+- It is usually emitted during logout/quit after Xwayland clients or portals lose their Wayland connection.
+- In the startup log this can appear shortly before `Compositor exited normally with exit code 0`.
+
+Interpretation:
+
+- If **Morph** exits with code 0, this is currently treated as xwayland-satellite shutdown noise.
+- Investigate further if the panic appears during normal runtime, prevents logout, or is followed by a non-zero **Morph** exit.
+- Use `RUST_BACKTRACE=1` only when debugging xwayland-satellite itself; it is not useful for Morph C crashdumps.
+
+## 12) Why does yEd / some Java apps only show a close button?
 
 Some Java applications under native Wayland **Morph** sessions (for example yEd) only expose a close button in the titlebar, while minimize/maximize are missing.
 

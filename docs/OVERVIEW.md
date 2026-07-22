@@ -216,7 +216,7 @@ flowchart TD
 
 - [`system_startup.sh`](../scripts/system_startup.sh) owns the compositor-side startup preparation.
 - [`config/startup.sh`](../config/startup.sh) stays user-facing and is the place for autostart services, panels, bars, terminals, and similar additions.
-- Path-like hook values from the active config, for example `~/.config/morph/startup.sh` or `${MORPH_SYSTEM_CONFIG_DIR}/startup.sh`, are sourced as files in the managed flow so helper functions stay available.
+- Path-like hook values from the active config, for example `~/.config/morph/startup.sh` or `${MORPH_USER_CONFIG_DIR}/startup.sh`, are sourced as files in the managed flow so helper functions stay available.
 - In managed mode, the system hook always runs before the user startup hook.
 
 Read the detailed behavior in [`Startup Hook Resolution`](LAUNCHER.md#startup-hook-resolution) in `docs/LAUNCHER.md`.

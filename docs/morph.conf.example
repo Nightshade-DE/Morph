@@ -14,7 +14,7 @@
 # ----------------------------------------------------------------------------
 # A single [hooks] block may define startup, reload, and shutdown hooks.
 # Path-like values such as ~/.config/morph/startup.sh or
-# ${MORPH_SYSTEM_CONFIG_DIR}/startup.sh are sourced as hook files so managed
+# ${MORPH_USER_CONFIG_DIR}/startup.sh are sourced as hook files so managed
 # helpers such as launch() and reload() stay available inside the hook.
 # Values that contain shell control syntax still run under /bin/sh -c.
 # Treat both forms as trusted code.
