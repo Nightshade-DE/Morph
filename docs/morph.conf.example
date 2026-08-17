@@ -1,41 +1,118 @@
+##############################################################################
 # Copy this file to ~/.config/morph/morph.conf.
-# You can also point Morph at a different path with MORPH_CONFIG or morph -c /path/to/morph.conf.
+# You can also point Morph at a different path with MORPH_CONFIG or
+# morph -c /path/to/morph.conf.
 # The full syntax and behavior reference lives in docs/CONFIG.md.
 #
 # Runtime notes:
 # - X11 apps use xwayland-satellite when MORPH_X11 is enabled.
-# - _JAVA_AWT_WM_NONREPARENTING=1 is exported for the session to help Java launchers.
-# - IPC uses $XDG_RUNTIME_DIR/morph-ipc.sock by default. morph --no-ipc disables the socket.
-# - morph --layout, --scroll, --tile-move, --scroll-move, --tile-grid, --workspace,
-#   --workspace-move, and morph --reload-config can talk to a running instance over IPC.
+# - _JAVA_AWT_WM_NONREPARENTING=1 is exported for the session to help
+#   Java launchers.
+# - IPC uses $XDG_RUNTIME_DIR/morph-ipc.sock by default. morph --no-ipc
+#   disables the socket.
+# - morph --layout, --scroll, --tile-move, --scroll-move, --tile-grid,
+#   --workspace, --workspace-move, and morph --reload-config can talk
+#   to a running instance over IPC.
+##############################################################################
 
-# ----------------------------------------------------------------------------
+##############################################################################
+# GENERAL CONFIGURATION
+##############################################################################
+
+# ============================================================================
 # Lifecycle hooks
-# ----------------------------------------------------------------------------
-# A single [hooks] block may define startup, reload, and shutdown hooks.
-# Path-like values such as ~/.config/morph/startup.sh or
-# ${MORPH_USER_CONFIG_DIR}/startup.sh are sourced as hook files so managed
-# helpers such as launch() and reload() stay available inside the hook.
-# Values that contain shell control syntax still run under /bin/sh -c.
-# Treat both forms as trusted code.
-# In the managed session flow, startup and reload pass through Morph's system hooks first.
-# Shutdown runs your user hook before the managed cleanup hook.
-#
+# ============================================================================
+# User-facing lifecycle hooks live under the Morph XDG config directory.
+# Use MORPH_USER_CONFIG_DIR for user hooks; MORPH_SYSTEM_CONFIG_DIR points to
+# packaged runtime files such as /etc/morph in release sessions.
+# In the managed session flow, startup and reload pass through Morph's system
+# hooks first.
+# Shutdown runs the user hook before the managed cleanup hook.
+
+[hooks]
+startup = ${MORPH_USER_CONFIG_DIR}/startup.sh
+shutdown = ${MORPH_USER_CONFIG_DIR}/shutdown.sh
+reload = ${MORPH_USER_CONFIG_DIR}/reload.sh
+
+# Example shell-hook alternatives when you want inline commands instead of hook files.
 # [hooks]
-# startup = ~/.config/morph/startup.sh
 # startup = waybar &
-# shutdown = ~/.config/morph/shutdown.sh
 # shutdown = pkill -x waybar 2>/dev/null || true
-# reload = ~/.config/morph/reload.sh
 # reload = pkill -USR1 waybar 2>/dev/null || true
 
+# ============================================================================
+# Layout
+# ============================================================================
 # ----------------------------------------------------------------------------
-# Key bindings
+# Animation
 # ----------------------------------------------------------------------------
+# [layout_anim] controls scene-node easing for tile and scroll movement.
+# This master config keeps animation enabled, but uses slightly snappier values
+# than the defaults.
+#
+# Default values if you want to restore the stock tuning.
+# [layout_anim]
+# enabled = yes
+# speed = 15
+# epsilon = 0.35
+
+[layout_anim]
+enabled = yes
+speed = 10.0
+epsilon = 0.25
+
+# ============================================================================
+# Decoration
+# ============================================================================
+# [decoration] controls the default xdg-decoration policy for tile and scroll layouts.
+# If omitted, Morph strips client title bars in tile and scroll by default for
+# clients that support xdg-decoration. Stack layout and tile-float windows always
+# keep client-side decorations.
+#
+[decoration]
+strip_in_tile_scroll = yes
+
+# ----------------------------------------------------------------------------
+# Decoration rules
+# ----------------------------------------------------------------------------
+# [decoration_rule] overrides the default decoration behavior for matching windows.
+# First matching rule wins. Use app_id= and/or title= with POSIX extended regex.
+# If strip= is omitted inside a rule, it defaults to yes.
+# Note: strip = no is useful for apps such as video players that should keep CSD.
+#
+# [decoration_rule]
+# app_id = ^mpv$
+# strip = no
+#
+# [decoration_rule]
+# title = ^Picture-in-Picture$
+# strip = no
+
+# ============================================================================
+# Input mapping
+# ============================================================================
+# [input_map] ties touch, tablet, or pointer devices to a specific output connector.
+# First matching rule wins.
+# Required keys:
+# - match= or name=: POSIX extended regex for the device name
+# - output=: connector name such as eDP-1, HDMI-A-1, or DP-2
+# Optional type=: touch, tablet/stylus/pen, pointer/mouse, all, or both
+# If type= is omitted, the rule applies to touch and tablet devices.
+#
+# [input_map]
+# match = ^HUION .*
+# output = DP-2
+# type = tablet
+
+
+##############################################################################
+# KEY BINDINGS
+##############################################################################
 # Each [bind] block describes one shortcut.
 # Start a new [bind] section for every binding.
 # Supported modifier tokens: Super, Shift, Ctrl/Control, Alt/Meta, Mod/Logo/Win/Mod4.
-# key= is resolved with xkb_keysym_from_name(), so names like Return, Escape, Q, Left, and F1 work.
+# key= is resolved with xkb_keysym_from_name(), so names like Return, Escape,
+#      Q, Left, and F1 work.
 #
 # Optional when= runs /bin/sh -c on every key press.
 # Exit status 0 means the bind is active.
@@ -43,101 +120,93 @@
 # - MORPH_LAYOUT is stack, tile, or scroll.
 # - MORPH_WORKSPACE is the active workspace number as 1..9.
 
-# Launch a terminal.
+# ============================================================================
+# Compositor
+# ============================================================================
+# Quit Morph
 [bind]
-mods = Super
-key = Return
-action = exec
-command = alacritty
+mods = Ctrl+Super+Alt
+key = Escape
+action = quit
 
-# Close the focused XDG toplevel.
+# ============================================================================
+# Windows
+# ============================================================================
+# Close the focused XDG toplevel window.
 [bind]
 mods = Super+Shift
 key = Q
 action = close
 
-# Quit the compositor.
+# ============================================================================
+# Layouts COMMON
+# ============================================================================
+# These keybindings are used over all layouts.
+
+# ----------------------------------------------------------------------------
+# Cycling
+# ----------------------------------------------------------------------------
+# Cycle layouts with one key:
+# stack -> tile.
+[bind]
+mods = Super+Shift
+key = T
+action = exec
+command = morph --layout tile
+when = [ "$MORPH_LAYOUT" = stack ]
+
+# tile -> scroll.
+[bind]
+mods = Super+Shift
+key = T
+action = exec
+command = morph --layout scroll
+when = [ "$MORPH_LAYOUT" = tile ]
+
+# scroll -> stack.
+[bind]
+mods = Super+Shift
+key = T
+action = exec
+command = morph --layout stack
+when = [ "$MORPH_LAYOUT" = scroll ]
+
+# Toggle between 2 layouts.
+# Note: layout_toggle switches between stack and tile, while scroll returns to stack.
 [bind]
 mods = Super
-key = Escape
-action = quit
+key = Space
+action = layout_toggle
 
-# Switch directly to tile layout.
-# Note: layout_toggle switches between stack and tile, while scroll returns to stack.
-# [bind]
-# mods = Super
-# key = T
-# action = layout_tile
-
-# Toggle between stack and tile layouts.
-# [bind]
-# mods = Super
-# key = Space
-# action = layout_toggle
-
-# Switch directly to scroll layout.
-# [bind]
-# mods = Super
-# key = S
-# action = layout_scroll
-
-# Start an app launcher only when it exists.
-# [bind]
-# mods = Super
-# key = D
-# action = exec
-# command = fuzzel
-# when = command -v fuzzel >/dev/null 2>&1
-
-# Example of layout-aware bindings using when=.
-# [bind]
-# mods = Super+Shift
-# key = Right
-# action = scroll_right
-# when = [ "$MORPH_LAYOUT" = scroll ]
-#
-# [bind]
-# mods = Super+Shift
-# key = Right
-# action = tile_right
-# when = [ "$MORPH_LAYOUT" = tile ]
+# ============================================================================
+# Layout STACK
+# ============================================================================
+# Multi-window tabbed container layout where windows overlap.
 
 # ----------------------------------------------------------------------------
-# Workspaces
+# Cycling (layout)
 # ----------------------------------------------------------------------------
-# Morph currently provides 9 workspaces.
-# workspace / workspace_goto and workspace_move require command= with a value from 1 to 9.
-# workspace_next / ws_next and workspace_prev / ws_prev cycle with wraparound.
-
-# Go to workspace 1.
-# [bind]
-# mods = Super
-# key = 1
-# action = workspace
-# command = 1
-
-# Move the focused window to workspace 2.
-# [bind]
-# mods = Super+Shift
-# key = 2
-# action = workspace_move
-# command = 2
-
-# Cycle to the next workspace.
-# [bind]
-# mods = Super
-# key = Page_Down
-# action = workspace_next
-
-# Cycle to the previous workspace.
-# [bind]
-# mods = Super
-# key = Page_Up
-# action = workspace_prev
 
 # ----------------------------------------------------------------------------
-# Tile and scroll movement
+# Moving (window)
 # ----------------------------------------------------------------------------
+
+
+# ============================================================================
+# Layout TILE
+# ============================================================================
+# Automatic column/grid layout arranging windows side-by-side without overlap.
+
+# ----------------------------------------------------------------------------
+# Cycling (layout)
+# ----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
+# Moving (window)
+# ----------------------------------------------------------------------------
+
+# Column/row
+# --------------------------------------
 # Sort-order movement works on the focused tiled window.
 # These actions are no-ops when the focused window is not a tiled XDG toplevel.
 # Useful actions and aliases:
@@ -146,6 +215,35 @@ action = quit
 # - tile_to_first / tile_first / tile_begin
 # - tile_to_last / tile_last / tile_end
 # - tile_move with an optional signed integer command (default 1)
+# - tile_up / tile_down move one row within the same column
+
+# Right direction.
+[bind]
+mods = Super+Shift
+key = Right
+action = tile_right
+when = [ "$MORPH_LAYOUT" = tile ]
+
+# Left direction.
+[bind]
+mods = Super+Shift
+key = Left
+action = tile_left
+when = [ "$MORPH_LAYOUT" = tile ]
+
+# move one row up in the current tile column.
+[bind]
+mods = Super+Shift
+key = Up
+action = tile_up
+when = [ "$MORPH_LAYOUT" = tile ]
+
+# move one row down in the current tile column.
+[bind]
+mods = Super+Shift
+key = Down
+action = tile_down
+when = [ "$MORPH_LAYOUT" = tile ]
 
 # Move one slot toward the start of the tile list.
 # [bind]
@@ -178,21 +276,11 @@ action = quit
 # action = tile_move
 # command = -3
 
+# Grid
+# --------------------------------------
 # Grid movement keeps row/column semantics in tile layout.
-# Note: tile_up / tile_down stay in the same column; tile_grid_move can move
-# left/right on the same row or up/down in the same column, including multi-step moves.
-
-# Move one row up in the same tile column.
-# [bind]
-# mods = Super+Shift
-# key = Up
-# action = tile_up
-
-# Move one row down in the same tile column.
-# [bind]
-# mods = Super+Shift
-# key = Down
-# action = tile_down
+# tile_grid_move can move left/right on the same row or up/down in the
+# same column, including multi-step moves.
 
 # Move left on the same row.
 # [bind]
@@ -221,44 +309,6 @@ action = quit
 # action = tile_col_bottom
 
 # ----------------------------------------------------------------------------
-# Layout animation
-# ----------------------------------------------------------------------------
-# [layout_anim] controls scene-node easing for tile and scroll movement.
-# If the section is omitted, Morph keeps easing enabled with these defaults:
-# - enabled = yes
-# - speed / lambda = 15
-# - epsilon / snap = 0.35
-# Note: this only smooths scene translation; client configure/resize behavior is unchanged.
-#
-# [layout_anim]
-# enabled = yes
-# speed = 15
-# epsilon = 0.35
-
-# ----------------------------------------------------------------------------
-# Decorations
-# ----------------------------------------------------------------------------
-# [decoration] controls the default xdg-decoration policy for tile and scroll layouts.
-# If omitted, Morph strips client title bars in tile and scroll by default for clients that
-# support xdg-decoration. Stack layout and tile-float windows always keep client-side decorations.
-#
-# [decoration]
-# strip_in_tile_scroll = yes
-
-# [decoration_rule] overrides the default decoration behavior for matching windows.
-# First matching rule wins. Use app_id= and/or title= with POSIX extended regex.
-# If strip= is omitted inside a rule, it defaults to yes.
-# Note: strip = no is useful for apps such as video players that should keep CSD.
-#
-# [decoration_rule]
-# app_id = ^mpv$
-# strip = no
-#
-# [decoration_rule]
-# title = ^Picture-in-Picture$
-# strip = no
-
-# ----------------------------------------------------------------------------
 # Tile rules
 # ----------------------------------------------------------------------------
 # [tile_rule] blocks control how matching XDG toplevels behave in tile layout.
@@ -278,18 +328,104 @@ action = quit
 # title = ^vim
 # order = -10
 
+
+# ============================================================================
+# Layout SCROLL
+# ============================================================================
+# Horizontally scrollable row layout for managing multiple windows.
+
 # ----------------------------------------------------------------------------
-# Input mapping
+# Cycling (layout)
 # ----------------------------------------------------------------------------
-# [input_map] ties touch, tablet, or pointer devices to a specific output connector.
-# First matching rule wins.
-# Required keys:
-# - match= or name=: POSIX extended regex for the device name
-# - output=: connector name such as eDP-1, HDMI-A-1, or DP-2
-# Optional type=: touch, tablet/stylus/pen, pointer/mouse, all, or both
-# If type= is omitted, the rule applies to touch and tablet devices.
-#
-# [input_map]
-# match = ^HUION .*
-# output = DP-2
-# type = tablet
+
+# ----------------------------------------------------------------------------
+# Moving (window)
+# ----------------------------------------------------------------------------
+# move one viewport step to the previous slot.
+[bind]
+mods = Super
+key = Left
+action = scroll_prev
+when = [ "$MORPH_LAYOUT" = scroll ]
+
+# Scroll-layout directional movement: move one viewport step to the next slot.
+[bind]
+mods = Super
+key = Right
+action = scroll_next
+when = [ "$MORPH_LAYOUT" = scroll ]
+
+
+# ============================================================================
+# Workspaces
+# ============================================================================
+# Morph currently provides 9 workspaces.
+# workspace / workspace_goto and workspace_move require command= with a value from 1 to 9.
+# workspace_next / ws_next and workspace_prev / ws_prev cycle with wraparound.
+
+# ----------------------------------------------------------------------------
+# Cycling (workspaces)
+# ----------------------------------------------------------------------------
+# Go to workspace 1.
+[bind]
+mods = Super
+key = 1
+action = workspace
+command = 1
+
+# Go to workspace 2.
+[bind]
+mods = Super
+key = 2
+action = workspace
+command = 2
+
+# Go to workspace 3.
+[bind]
+mods = Super
+key = 3
+action = workspace
+command = 3
+
+# Go to workspace 4.
+[bind]
+mods = Super
+key = 4
+action = workspace
+command = 4
+
+# ----------------------------------------------------------------------------
+# Moving (window)
+# ----------------------------------------------------------------------------
+# Move the focused window to workspace 2.
+# [bind]
+# mods = Super+Shift
+# key = 2
+# action = workspace_move
+# command = 2
+
+
+# ============================================================================
+# Applications
+# ============================================================================
+# Launch a terminal.
+[bind]
+mods = Super
+key = Return
+action = exec
+command = alacritty
+
+# Open PulseAudio control.
+[bind]
+mods = Super
+key = Escape
+action = exec
+command = pavucontrol
+
+# Launcher only when fuzzel exists.
+# [bind]
+# mods = Super
+# key = D
+# action = exec
+# command = fuzzel
+# when = command -v fuzzel >/dev/null 2>&1

@@ -45,7 +45,7 @@ XKB_DEFAULT_MODEL=pc105
 XKB_DEFAULT_OPTIONS=grp:alt_shift_toggle
 
 # X11 bridge controls (xwayland-satellite in compositor)
-# Empty MORPH_X11 means session-aware default in launcher.
+# Empty MORPH_X11 uses the enabled default in the launcher.
 #MORPH_X11=0
 #MORPH_X11_DISPLAY=:12
 

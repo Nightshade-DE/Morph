@@ -1,7 +1,19 @@
 #!/bin/sh
 set -eu
 
+test_mode=release
+if [ "${1:-}" = "--dbg" ]; then
+    test_mode=debug
+    shift
+fi
+
 repo_root=${1:?expected repository root as first argument}
+
+if [ "$test_mode" = debug ]; then
+    expected_morph_bin="$repo_root/build_dbg/morph"
+else
+    expected_morph_bin="$repo_root/build/morph"
+fi
 
 fail() {
     printf 'FAIL: %s\n' "$*" >&2
@@ -13,6 +25,22 @@ assert_file_contains() {
     expected=$2
     if ! grep -F -- "$expected" "$file" >/dev/null 2>&1; then
         printf 'Missing expected text in %s:\n%s\n' "$file" "$expected" >&2
+        if [ -f "$file" ]; then
+            printf '%s\n' '--- file contents ---' >&2
+            cat "$file" >&2
+            printf '%s\n' '---------------------' >&2
+        fi
+        exit 1
+    fi
+}
+
+assert_log_field_contains() {
+    file=$1
+    label=$2
+    expected=$3
+
+    if ! grep -F -- "$label:" "$file" | grep -F -- "$expected" >/dev/null 2>&1; then
+        printf 'Missing expected log field in %s:\n%s: %s\n' "$file" "$label" "$expected" >&2
         if [ -f "$file" ]; then
             printf '%s\n' '--- file contents ---' >&2
             cat "$file" >&2
@@ -56,6 +84,21 @@ launcher_startup_log_path() {
     fi
 
     printf '%s\n' "$default_log"
+}
+
+run_launcher_resolve_only() {
+    if [ "$test_mode" = debug ]; then
+        env -u DISPLAY -u WAYLAND_DISPLAY -u MORPH_X11 \
+            "$@" \
+            "$repo_root/testing/morph-session_dbg"
+    else
+        env -u DISPLAY -u WAYLAND_DISPLAY -u MORPH_X11 \
+            MORPH_SYSTEM_HOOK_DIR="$repo_root/scripts" \
+            MORPH_SYSTEM_CONFIG_DIR="$repo_root/config" \
+            MORPH_BIN="$expected_morph_bin" \
+            "$@" \
+            sh "$repo_root/scripts/morph-session"
+    fi
 }
 
 test_launch_helpers_track_expected_processes() {
@@ -529,6 +572,43 @@ test_system_shutdown_cleans_registered_processes() {
     trap - EXIT HUP INT TERM
 }
 
+test_system_shutdown_skips_missing_configured_hook_file() {
+    tmpdir=$(make_tmpdir)
+    trap 'rm -rf "$tmpdir"' EXIT HUP INT TERM
+
+    export COMP_ROOT_DIR="$repo_root"
+    export MORPH_HELPER_LIB="$repo_root/scripts/shell-helpers.sh"
+    export MORPH_SHUTDOWN_LOG_FILE="$tmpdir/shutdown.log"
+    export MORPH_SHUTDOWN_LIST="$tmpdir/shutdown_list.nfo"
+    export MORPH_SESSION_MODE=native
+    export MORPH_USER_CONFIG_DIR="$tmpdir/user-config/morph"
+    export MORPH_USER_SHUTDOWN_HOOK_CMD='${MORPH_USER_CONFIG_DIR}/shutdown.sh'
+    : > "$MORPH_SHUTDOWN_LOG_FILE"
+    : > "$MORPH_SHUTDOWN_LIST"
+
+    pkill() {
+        return 0
+    }
+    sleep() {
+        return 0
+    }
+
+    # Source the shutdown runtime directly to verify the no-install path where
+    # the config points at the conventional user hook, but that file is absent.
+    # shellcheck disable=SC1090
+    . "$repo_root/scripts/system_shutdown.sh"
+
+    assert_file_contains \
+        "$MORPH_SHUTDOWN_LOG_FILE" \
+        "Configured user shutdown hook file is not readable, skipping: $tmpdir/user-config/morph/shutdown.sh"
+    if grep -F -- "Running user shutdown hook from config." "$MORPH_SHUTDOWN_LOG_FILE" >/dev/null 2>&1; then
+        fail "missing configured shutdown hook file must not be executed as a shell command"
+    fi
+
+    rm -rf "$tmpdir"
+    trap - EXIT HUP INT TERM
+}
+
 test_launcher_resolves_user_config_before_system_fallback() {
     tmpdir=$(make_tmpdir)
     trap 'rm -rf "$tmpdir"' EXIT HUP INT TERM
@@ -548,16 +628,16 @@ key = Q
 action = quit
 EOF
 
-    env -u DISPLAY -u WAYLAND_DISPLAY \
+    run_launcher_resolve_only \
         XDG_CONFIG_HOME="$tmpdir/user-config" \
         XDG_STATE_HOME="$tmpdir/state" \
         MORPH_SYSTEM_CONFIG_FILE="$tmpdir/system-config/morph.conf" \
-        MORPH_RESOLVE_ONLY=1 \
-        "$repo_root/testing/morph-session_dbg"
+        MORPH_RESOLVE_ONLY=1
 
-    assert_file_contains \
+    assert_log_field_contains \
         "$(launcher_startup_log_path "$tmpdir/state/morph")" \
-        "Config file path:             $tmpdir/user-config/morph/morph.conf (user config fallback)"
+        "Config file path" \
+        "$tmpdir/user-config/morph/morph.conf (user config fallback)"
 
     rm -rf "$tmpdir"
     trap - EXIT HUP INT TERM
@@ -575,16 +655,16 @@ key = Q
 action = quit
 EOF
 
-    env -u DISPLAY -u WAYLAND_DISPLAY \
+    run_launcher_resolve_only \
         XDG_CONFIG_HOME="$tmpdir/empty-config" \
         XDG_STATE_HOME="$tmpdir/state" \
         MORPH_SYSTEM_CONFIG_FILE="$tmpdir/system-config/morph.conf" \
-        MORPH_RESOLVE_ONLY=1 \
-        "$repo_root/testing/morph-session_dbg"
+        MORPH_RESOLVE_ONLY=1
 
-    assert_file_contains \
+    assert_log_field_contains \
         "$(launcher_startup_log_path "$tmpdir/state/morph")" \
-        "Config file path:             $tmpdir/system-config/morph.conf (system config fallback)"
+        "Config file path" \
+        "$tmpdir/system-config/morph.conf (system config fallback)"
 
     rm -rf "$tmpdir"
     trap - EXIT HUP INT TERM
@@ -596,12 +676,12 @@ test_launcher_fails_when_no_config_exists() {
 
     mkdir -p "$tmpdir/empty-config" "$tmpdir/state"
     set +e
-    env -u DISPLAY -u WAYLAND_DISPLAY \
+    run_launcher_resolve_only \
         XDG_CONFIG_HOME="$tmpdir/empty-config" \
         XDG_STATE_HOME="$tmpdir/state" \
         MORPH_SYSTEM_CONFIG_FILE="$tmpdir/missing-system-config" \
-        MORPH_RESOLVE_ONLY=1 \
-        "$repo_root/testing/morph-session_dbg" >/dev/null 2>"$tmpdir/stderr.log"
+        MORPH_ALLOW_BUILTIN_FALLBACK=0 \
+        MORPH_RESOLVE_ONLY=1 >/dev/null 2>"$tmpdir/stderr.log"
     status=$?
     set -e
 
@@ -617,17 +697,17 @@ test_launcher_can_opt_into_builtin_fallback() {
     trap 'rm -rf "$tmpdir"' EXIT HUP INT TERM
 
     mkdir -p "$tmpdir/empty-config" "$tmpdir/state"
-    env -u DISPLAY -u WAYLAND_DISPLAY \
+    run_launcher_resolve_only \
         XDG_CONFIG_HOME="$tmpdir/empty-config" \
         XDG_STATE_HOME="$tmpdir/state" \
         MORPH_SYSTEM_CONFIG_FILE="$tmpdir/missing-system-config" \
         MORPH_ALLOW_BUILTIN_FALLBACK=1 \
-        MORPH_RESOLVE_ONLY=1 \
-        "$repo_root/testing/morph-session_dbg"
+        MORPH_RESOLVE_ONLY=1
 
-    assert_file_contains \
+    assert_log_field_contains \
         "$(launcher_startup_log_path "$tmpdir/state/morph")" \
-        "Builtin fallback enabled:     1"
+        "Builtin fallback enabled" \
+        "1"
 
     rm -rf "$tmpdir"
     trap - EXIT HUP INT TERM
@@ -652,36 +732,63 @@ EOF
 MORPH_DBG=1
 EOF
 
-    env -u DISPLAY -u WAYLAND_DISPLAY \
+    run_launcher_resolve_only \
         XDG_CONFIG_HOME="$tmpdir/user-config" \
         XDG_STATE_HOME="$tmpdir/state" \
         MORPH_SYSTEM_CONFIG_DIR="$tmpdir/system-config" \
         MORPH_RESOLVE_ONLY=1 \
-        MORPH_DBG=2 \
-        "$repo_root/testing/morph-session_dbg"
+        MORPH_DBG=2
 
-    assert_file_contains \
+    assert_log_field_contains \
         "$(launcher_startup_log_path "$tmpdir/state/morph")" \
-        "MORPH_DBG:                2"
+        "MORPH_DBG" \
+        "2"
 
     rm -rf "$tmpdir"
     trap - EXIT HUP INT TERM
 }
 
-test_launcher_defaults_to_debug_binary() {
+test_launcher_uses_expected_mode_binary() {
     tmpdir=$(make_tmpdir)
     trap 'rm -rf "$tmpdir"' EXIT HUP INT TERM
 
     mkdir -p "$tmpdir/state"
 
-    env -u DISPLAY -u WAYLAND_DISPLAY \
+    run_launcher_resolve_only \
         XDG_STATE_HOME="$tmpdir/state" \
-        MORPH_RESOLVE_ONLY=1 \
-        "$repo_root/testing/morph-session_dbg"
+        MORPH_RESOLVE_ONLY=1
 
-    assert_file_contains \
+    assert_log_field_contains \
         "$(launcher_startup_log_path "$tmpdir/state/morph")" \
-        "Compositor binary:            $repo_root/build_dbg/morph"
+        "Compositor binary" \
+        "$expected_morph_bin"
+
+    rm -rf "$tmpdir"
+    trap - EXIT HUP INT TERM
+}
+
+test_launcher_enables_x11_bridge_by_default_in_nested_mode() {
+    tmpdir=$(make_tmpdir)
+    trap 'rm -rf "$tmpdir"' EXIT HUP INT TERM
+
+    mkdir -p "$tmpdir/bin" "$tmpdir/empty-config" "$tmpdir/state"
+    cat > "$tmpdir/bin/xdpyinfo" <<'EOF'
+#!/bin/sh
+exit 0
+EOF
+    chmod +x "$tmpdir/bin/xdpyinfo"
+
+    run_launcher_resolve_only \
+        PATH="$tmpdir/bin:$PATH" \
+        DISPLAY=:42 \
+        XDG_CONFIG_HOME="$tmpdir/empty-config" \
+        XDG_STATE_HOME="$tmpdir/state" \
+        MORPH_SYSTEM_CONFIG_FILE="$repo_root/config/morph.conf" \
+        MORPH_RESOLVE_ONLY=1
+
+    startup_log="$tmpdir/state/morph/morph-nested-startup.log"
+    assert_log_field_contains "$startup_log" "Selected session mode" "nested-x11"
+    assert_log_field_contains "$startup_log" "MORPH_X11" "1"
 
     rm -rf "$tmpdir"
     trap - EXIT HUP INT TERM
@@ -709,12 +816,14 @@ EOF
         MORPH_RESOLVE_ONLY=1 \
         sh "$repo_root/scripts/morph-session"
 
-    assert_file_contains \
+    assert_log_field_contains \
         "$(launcher_startup_log_path "$tmpdir/state/morph")" \
-        "Managed hook directory:       $repo_root/scripts"
-    assert_file_contains \
+        "Managed system hook directory" \
+        "$repo_root/scripts"
+    assert_log_field_contains \
         "$(launcher_startup_log_path "$tmpdir/state/morph")" \
-        "Config file path:             $tmpdir/system-config/morph.conf (system config fallback)"
+        "Config file path" \
+        "$tmpdir/system-config/morph.conf (system config fallback)"
 
     rm -rf "$tmpdir"
     trap - EXIT HUP INT TERM
@@ -727,11 +836,11 @@ test_meson_install_manifest_lists_runtime_artifacts() {
     manifest="$tmpdir/installed.json"
     meson introspect --installed "$repo_root/build" > "$manifest"
 
-    assert_file_contains "$manifest" "/usr/local/bin/morph-session"
-    assert_file_contains "$manifest" "/usr/local/etc/morph/morph.conf"
-    assert_file_contains "$manifest" "/usr/local/etc/morph/system_startup.sh"
-    assert_file_contains "$manifest" "/usr/local/share/wayland-sessions/morph.desktop"
-    assert_file_contains "$manifest" "/usr/local/share/doc/morph/CONFIG.md"
+    assert_file_contains "$manifest" "/usr/bin/morph-session"
+    assert_file_contains "$manifest" "/etc/morph/morph.conf"
+    assert_file_contains "$manifest" "/etc/morph/system_startup.sh"
+    assert_file_contains "$manifest" "/usr/share/wayland-sessions/morph.desktop"
+    assert_file_contains "$manifest" "/usr/share/doc/morph/CONFIG.md"
 
     rm -rf "$tmpdir"
     trap - EXIT HUP INT TERM
@@ -745,8 +854,8 @@ test_system_uninstall_prints_manifest_without_removing() {
     sh "$repo_root/scripts/system-uninstall.sh" --builddir "$repo_root/build" --print-only > "$output_file"
 
     assert_file_contains "$output_file" "Installed artifacts for build dir: $repo_root/build"
-    assert_file_contains "$output_file" "/usr/local/bin/morph-session"
-    assert_file_contains "$output_file" "/usr/local/etc/morph/morph.conf"
+    assert_file_contains "$output_file" "/usr/bin/morph-session"
+    assert_file_contains "$output_file" "/etc/morph/morph.conf"
     assert_file_contains "$output_file" "Print-only mode active. No files were removed."
 
     rm -rf "$tmpdir"
@@ -765,12 +874,14 @@ test_system_startup_runs_variable_based_user_hook_file
 test_morph_config_hook_from_file_reads_hooks_section
 test_portals_log_effective_runtime_values
 test_system_shutdown_cleans_registered_processes
+test_system_shutdown_skips_missing_configured_hook_file
 test_launcher_resolves_user_config_before_system_fallback
 test_launcher_uses_system_config_when_user_config_is_missing
 test_launcher_fails_when_no_config_exists
 test_launcher_can_opt_into_builtin_fallback
 test_launcher_restores_caller_environment_over_file_layers
-test_launcher_defaults_to_debug_binary
+test_launcher_uses_expected_mode_binary
+test_launcher_enables_x11_bridge_by_default_in_nested_mode
 test_production_wrapper_resolves_system_config_with_repo_overrides
 test_meson_install_manifest_lists_runtime_artifacts
 test_system_uninstall_prints_manifest_without_removing

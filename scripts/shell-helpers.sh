@@ -208,6 +208,38 @@ morph_user_config_dir() {
     fi
 }
 
+# Return the libexec-style directory that contains Morph's default portal set.
+# Distributions disagree here: Arch commonly uses /usr/lib, while Debian-like
+# layouts use /usr/libexec. A caller-provided value remains the highest-priority
+# escape hatch for local packaging or custom installs.
+morph_portal_libexec_dir_has_default_set() {
+    candidate="$1"
+
+    [ -d "$candidate" ] || return 1
+    [ -x "$candidate/xdg-desktop-portal" ] || return 1
+    [ -x "$candidate/xdg-desktop-portal-wlr" ] || return 1
+    [ -x "$candidate/xdg-desktop-portal-gtk" ] || return 1
+}
+
+morph_portal_libexec_dir() {
+    if [ -n "${MORPH_PORTAL_LIBEXEC_DIR:-}" ]; then
+        if morph_portal_libexec_dir_has_default_set "$MORPH_PORTAL_LIBEXEC_DIR"; then
+            printf '%s\n' "$MORPH_PORTAL_LIBEXEC_DIR"
+            return 0
+        fi
+        return 1
+    fi
+
+    for candidate in /usr/libexec /usr/lib /usr/local/libexec /usr/local/lib; do
+        if morph_portal_libexec_dir_has_default_set "$candidate"; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
 # Return the last configured hook command from a config file's [hooks] section.
 morph_config_hook_from_file() {
     hook_kind="$1"
@@ -329,6 +361,10 @@ morph_run_optional_user_hook() {
             . "$hook_cmd_path"
             return $?
         fi
+        if [ -n "$hook_cmd_path" ]; then
+            log_morph INFO "Configured user $hook_kind hook file is not readable, skipping: $hook_cmd_path"
+            return 0
+        fi
 
         # Config-provided commands have highest priority because they are the
         # explicit lifecycle contract selected by the active config file.
@@ -360,6 +396,13 @@ morph_run_optional_user_hook() {
 morph_source_portals() {
     base_portals_file="$(morph_managed_config_dir)/portals"
     user_portals_file="$(morph_user_config_dir)/portals"
+
+    if ! MORPH_PORTAL_LIBEXEC_DIR="$(morph_portal_libexec_dir)"; then
+        log_startup ERROR "No complete xdg-desktop-portal default set found in MORPH_PORTAL_LIBEXEC_DIR or known libexec paths."
+        return 1
+    fi
+    export MORPH_PORTAL_LIBEXEC_DIR
+    log_startup INFO "Portal executable directory: $MORPH_PORTAL_LIBEXEC_DIR."
 
     if [ ! -r "$base_portals_file" ]; then
         log_startup ERROR "Managed portals file is missing or unreadable: $base_portals_file."

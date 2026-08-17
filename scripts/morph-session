@@ -42,7 +42,7 @@ for var_name in \
     MORPH_X11 MORPH_X11_DISPLAY MORPH_DBG MORPH_CONFIG \
     MORPH_LOG_DIR MORPH_SYSTEM_HOOK_DIR MORPH_SYSTEM_CONFIG_DIR \
     MORPH_SYSTEM_CONFIG_FILE MORPH_BIN MORPH_ALLOW_BUILTIN_FALLBACK \
-    MORPH_DEBUG_XDG MORPH_DEBUG_XDG_COMMITS MORPH_DEBUG_POINTER_FOCUS MORPH_DEBUG_LAYER_HIT \
+    MORPH_PORTAL_LIBEXEC_DIR MORPH_DEBUG_XDG MORPH_DEBUG_XDG_COMMITS MORPH_DEBUG_POINTER_FOCUS MORPH_DEBUG_LAYER_HIT \
     MORPH_BRIDGE_RESIZE_HZ MORPH_LOG_KEYS \
     XKB_DEFAULT_LAYOUT XKB_DEFAULT_MODEL XKB_DEFAULT_VARIANT XKB_DEFAULT_OPTIONS
 do
@@ -75,7 +75,7 @@ for var_name in \
     MORPH_X11 MORPH_X11_DISPLAY MORPH_DBG MORPH_CONFIG \
     MORPH_LOG_DIR MORPH_SYSTEM_HOOK_DIR MORPH_SYSTEM_CONFIG_DIR \
     MORPH_SYSTEM_CONFIG_FILE MORPH_BIN MORPH_ALLOW_BUILTIN_FALLBACK \
-    MORPH_DEBUG_XDG MORPH_DEBUG_XDG_COMMITS MORPH_DEBUG_POINTER_FOCUS MORPH_DEBUG_LAYER_HIT \
+    MORPH_PORTAL_LIBEXEC_DIR MORPH_DEBUG_XDG MORPH_DEBUG_XDG_COMMITS MORPH_DEBUG_POINTER_FOCUS MORPH_DEBUG_LAYER_HIT \
     MORPH_BRIDGE_RESIZE_HZ MORPH_LOG_KEYS \
     XKB_DEFAULT_LAYOUT XKB_DEFAULT_MODEL XKB_DEFAULT_VARIANT XKB_DEFAULT_OPTIONS
 do
@@ -109,7 +109,7 @@ WAYLAND_DEBUG_DEFAULT=0
 WLR_LOGTS_DEFAULT=0
 JAVA_NONREPARENT_DEFAULT=1
 WMNAME_DEFAULT=LG3D
-MORPH_X11_DEFAULT=
+MORPH_X11_DEFAULT=1
 MORPH_X11_DISPLAY_DEFAULT=
 MORPH_DBG_DEFAULT=0
 MORPH_LOG_DIR_DEFAULT=
@@ -169,6 +169,7 @@ if [ -n "${MORPH_DEBUG_LAYER_HIT+x}" ]; then export MORPH_DEBUG_LAYER_HIT; fi
 if [ -n "${MORPH_BRIDGE_RESIZE_HZ+x}" ]; then export MORPH_BRIDGE_RESIZE_HZ; fi
 if [ -n "${MORPH_LOG_KEYS+x}" ]; then export MORPH_LOG_KEYS; fi
 if [ -n "${MORPH_ALLOW_BUILTIN_FALLBACK+x}" ]; then export MORPH_ALLOW_BUILTIN_FALLBACK; fi
+if [ -n "${MORPH_PORTAL_LIBEXEC_DIR+x}" ]; then export MORPH_PORTAL_LIBEXEC_DIR; fi
 
 
 # Load shared helper functions before first use.
@@ -275,25 +276,20 @@ else
     SESSION_MODE_NOTE="native-tty"
 fi
 
-# Session-aware default for xwayland-satellite behavior.
+# Validate xwayland-satellite behavior.
 # ==============================================================================
-# Keep native sessions X11-capable by default, but avoid unnecessary bridge
-# startup in nested sessions unless explicitly requested.
+# Keep X11 applications available in every session type by default. Nested
+# sessions are also a normal user-facing runtime and must not silently lose X11
+# compatibility merely because the compositor itself uses a nested backend.
 MORPH_X11_NOTE=""
-if [ "$WLR_BACKENDS" = "x11" ] || [ "$WLR_BACKENDS" = "wayland" ]; then
-    MORPH_X11_SESSION_DEFAULT=0
-else
-    MORPH_X11_SESSION_DEFAULT=1
-fi
-
 if [ -z "$MORPH_X11" ]; then
-    MORPH_X11="$MORPH_X11_SESSION_DEFAULT"
+    MORPH_X11="$MORPH_X11_DEFAULT"
 else
     case "$MORPH_X11" in
         0|1) ;;
         *)
-            MORPH_X11_NOTE="invalid MORPH_X11='$MORPH_X11' (using session default $MORPH_X11_SESSION_DEFAULT)"
-            MORPH_X11="$MORPH_X11_SESSION_DEFAULT"
+            MORPH_X11_NOTE="invalid MORPH_X11='$MORPH_X11' (using default $MORPH_X11_DEFAULT)"
+            MORPH_X11="$MORPH_X11_DEFAULT"
             ;;
     esac
 fi
@@ -374,7 +370,15 @@ log_summary() {
     log_startup INFO "$(printf '%-33s%s' "$label:" "$value")"
 }
 
-log_startup INFO "Runtime summary (release-relevant):"
+log_summary_if_set() {
+    label="$1"
+    value="$2"
+    if [ -n "$value" ]; then
+        log_summary "$label" "$value"
+    fi
+}
+
+log_startup INFO "Runtime summary:"
 log_startup INFO "--------------------------------------------------------------------------------"
 log_summary "Environment source" "$ENV_FILE_NOTE"
 log_summary "Selected session mode" "$SESSION_MODE_NOTE"
@@ -388,6 +392,7 @@ log_summary "User config directory" "$MORPH_USER_CONFIG_DIR"
 log_summary "Compositor binary" "$MORPH_BIN"
 log_summary "WLR_BACKENDS" "$WLR_BACKENDS..."
 log_summary "WLR_WL_SOCKET" "${WLR_WL_SOCKET:-unset}"
+log_summary "LD_LIBRARY_PATH" "${LD_LIBRARY_PATH:-unset}"
 log_summary "MORPH_DBG" "$MORPH_DBG"
 log_summary "MORPH_LOG_LEVEL" "$MORPH_LOG_LEVEL"
 log_summary "Crash handler enabled" "$MORPH_ENABLE_CRASH_HANDLER"
@@ -413,12 +418,19 @@ if [ -n "$MORPH_LD_LIBRARY_PATH_NOTE" ]; then
 fi
 
 if [ "$MORPH_DBG" -ge 1 ]; then
-    log_startup INFO "Debug summary:"
+    log_startup INFO "Verbose environment details:"
     log_startup INFO "--------------------------------------------------------------------------------"
     log_summary "WAYLAND_DEBUG" "$WAYLAND_DEBUG"
     log_summary "WLR_LOGTS" "$WLR_LOGTS"
     log_summary "_JAVA_AWT_WM_NONREPARENTING" "$_JAVA_AWT_WM_NONREPARENTING"
     log_summary "WMNAME" "$WMNAME"
+    log_summary_if_set "MORPH_DEBUG_XDG" "${MORPH_DEBUG_XDG:-}"
+    log_summary_if_set "MORPH_DEBUG_XDG_COMMITS" "${MORPH_DEBUG_XDG_COMMITS:-}"
+    log_summary_if_set "MORPH_DEBUG_POINTER_FOCUS" "${MORPH_DEBUG_POINTER_FOCUS:-}"
+    log_summary_if_set "MORPH_DEBUG_LAYER_HIT" "${MORPH_DEBUG_LAYER_HIT:-}"
+    log_summary_if_set "MORPH_BRIDGE_RESIZE_HZ" "${MORPH_BRIDGE_RESIZE_HZ:-}"
+    log_summary_if_set "MORPH_LOG_KEYS" "${MORPH_LOG_KEYS:-}"
+    log_summary_if_set "MORPH_PORTAL_LIBEXEC_DIR" "${MORPH_PORTAL_LIBEXEC_DIR:-}"
 fi
 
 if morph_env_flag_is_enabled "${MORPH_RESOLVE_ONLY:-0}"; then

@@ -23,20 +23,20 @@ morph_start_portals() {
     # Portal backends needed by morph
     # ==============================================================================
     # wlroots backend for screencast, screenshot, and monitor sharing.
-    launch_nokill /usr/libexec/xdg-desktop-portal-wlr
+    launch_nokill "$MORPH_PORTAL_LIBEXEC_DIR/xdg-desktop-portal-wlr"
     # GTK fallback for file chooser, settings, and mixed GTK/Qt app support.
-    launch_nokill /usr/libexec/xdg-desktop-portal-gtk
+    launch_nokill "$MORPH_PORTAL_LIBEXEC_DIR/xdg-desktop-portal-gtk"
 
     # Optional desktop-specific portal backends.
     # Enable only ONE of these when the matching desktop stack is installed.
-    #launch_nokill /usr/libexec/xdg-desktop-portal-hyprland
-    #launch_nokill /usr/libexec/xdg-desktop-portal-gnome
-    #launch_nokill /usr/libexec/xdg-desktop-portal-kde
-    #launch_nokill /usr/libexec/xdg-desktop-portal-lxqt
+    #launch_nokill "$MORPH_PORTAL_LIBEXEC_DIR/xdg-desktop-portal-hyprland"
+    #launch_nokill "$MORPH_PORTAL_LIBEXEC_DIR/xdg-desktop-portal-gnome"
+    #launch_nokill "$MORPH_PORTAL_LIBEXEC_DIR/xdg-desktop-portal-kde"
+    #launch_nokill "$MORPH_PORTAL_LIBEXEC_DIR/xdg-desktop-portal-lxqt"
 
     # Start the broker after its backend portals had a short head start.
     sleep 1
-    launch_nokill /usr/libexec/xdg-desktop-portal
+    launch_nokill "$MORPH_PORTAL_LIBEXEC_DIR/xdg-desktop-portal"
     log_startup INFO "Started xdg-desktop-portal instances."
 
     # Keep toolkit defaults close to portal startup so the runtime contract

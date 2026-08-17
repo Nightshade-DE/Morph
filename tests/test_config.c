@@ -235,6 +235,8 @@ static int test_valid_config_parse(void)
  */
 static int test_invalid_tile_grid_command(void)
 {
+    fprintf(stderr, "NOTE: the following config parser ERROR messages are expected; this test intentionally feeds invalid config.\n");
+
     const char *cfg_text =
         "[bind]\n"
         "mods = Super\n"
@@ -266,6 +268,8 @@ static int test_invalid_tile_grid_command(void)
  */
 static int test_missing_config_fails(void)
 {
+    fprintf(stderr, "NOTE: the following missing-config ERROR message is expected; this test verifies hard-fail behavior.\n");
+
     struct comp_config *cfg = NULL;
     unsetenv("MORPH_ALLOW_BUILTIN_FALLBACK");
     bool ok = comp_config_load("/tmp/morph-config-this-file-does-not-exist", &cfg);
@@ -283,6 +287,8 @@ static int test_missing_config_fails(void)
  */
 static int test_missing_config_can_use_builtin_fallback(void)
 {
+    fprintf(stderr, "NOTE: the following missing-config ERROR message is expected before builtin fallback is accepted.\n");
+
     struct comp_config *cfg = NULL;
     setenv("MORPH_ALLOW_BUILTIN_FALLBACK", "1", 1);
     bool ok = comp_config_load("/tmp/morph-config-this-file-does-not-exist", &cfg);

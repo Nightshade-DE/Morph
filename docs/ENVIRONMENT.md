@@ -69,10 +69,8 @@ Controls xwayland-satellite startup in compositor:
 - 0: disable satellite
 - 1: enable satellite
 
-If unset, launcher applies session-aware defaults:
-
-- nested backends (x11/wayland): default 0
-- native backend (drm,libinput): default 1
+Default: 1 for both nested and native sessions. Set `MORPH_X11=0` explicitly
+to disable X11 application support.
 
 <a id="morph-x11-display"></a>
 ### MORPH_X11_DISPLAY
@@ -112,6 +110,20 @@ Use this in `[hooks]` when you want lifecycle hooks to follow the active user
 configuration directory, for example `${MORPH_USER_CONFIG_DIR}/startup.sh`.
 `MORPH_SYSTEM_CONFIG_DIR` is reserved for managed runtime files such as
 `/etc/morph` in release sessions.
+
+
+<a id="morph-portal-libexec-dir"></a>
+### MORPH_PORTAL_LIBEXEC_DIR
+
+Optional directory override for the xdg-desktop-portal executables used by the
+managed portal startup file.
+
+- default: auto-detect `/usr/libexec`, `/usr/lib`, `/usr/local/libexec`, then `/usr/local/lib`
+- required executables in that directory: `xdg-desktop-portal`, `xdg-desktop-portal-wlr`, and `xdg-desktop-portal-gtk`
+- exported by the managed portal resolver before `morph_start_portals()` runs
+
+Set this only when the portal executables are installed in a distro- or
+locally-specific directory that Morph cannot auto-detect.
 
 <a id="ld-library-path"></a>
 ### LD_LIBRARY_PATH

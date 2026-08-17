@@ -44,12 +44,13 @@ Both wrappers keep the same managed hook model around **Morph**:
 
 - uses repository-local debug defaults such as `./build_dbg/morph`
 - prefers repository files under `config/` and `testing/`
-- is the wrapper used by the automated shell-runtime tests
+- is covered by the shell-runtime tests only when they are run explicitly with `--dbg`
 - is the best starting point for local nested/native smoke checks during development
 
 ### Runtime wrapper: [`scripts/morph-session`](../scripts/morph-session)
 
 - uses installed defaults such as `morph` in `PATH`
+- is the wrapper used by the standard automated shell-runtime tests
 - prefers installed files under `/etc/morph`
 - is the wrapper referenced by [`sessions/morph.desktop`](../sessions/morph.desktop)
 - is the runtime entry point for greetd, SDDM, LightDM, and similar session managers
@@ -99,7 +100,7 @@ Both wrappers follow the same high-level layering model:
 
    Example: default log directory under `$XDG_STATE_HOME/morph`
 
-   Example: nested sessions default [`MORPH_X11`](ENVIRONMENT.md#morph-x11) to `0`
+   Example: [`MORPH_X11`](ENVIRONMENT.md#morph-x11) defaults to `1`
 
 5. Caller environment restored as highest priority
 
@@ -155,6 +156,7 @@ Behavior:
 - The config keeps the user hook paths. The managed runtime reads those commands from the active config and passes them through environment variables.
 - [`scripts/system_startup.sh`](../scripts/system_startup.sh) loads startup helpers, prepares nested/native runtime state, and then runs the configured user startup hook or its XDG fallback.
 - Native sessions load the managed base portal setup before any session components are started.
+- The managed portal resolver sets `MORPH_PORTAL_LIBEXEC_DIR` before `morph_start_portals()` runs, so the same portal file works on `/usr/libexec` and `/usr/lib` based distributions.
 - If the user override exists, it is sourced after the managed base file and may replace [`morph_start_portals()`](../testing/config/portals) in development or the installed runtime portal function.
 - Nested sessions skip portal startup entirely.
 - Users do not need a portal file unless they intentionally want to override the managed default behavior.

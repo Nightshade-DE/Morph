@@ -17,7 +17,10 @@ add_project_arguments('-DWLR_USE_UNSTABLE', language: 'c')
 cc = meson.get_compiler('c')
 m_dep = cc.find_library('m', required: false)
 
-wlroots = dependency('wlroots-0.19')
+wlroots = dependency(
+  ['wlroots-0.19', 'wlroots-0.20', 'wlroots-0.22', 'wlroots-git', 'wlroots'],
+  version: '>=0.19'
+)
 # Needed for compositor-side touchpad defaults such as tap-to-click.
 libinput = dependency('libinput')
 pixman = dependency('pixman-1')
@@ -165,8 +168,12 @@ install_data(
 )
 
 install_data(
+  files('README.md'),
+  install_dir: morph_doc_dir,
+)
+
+install_data(
   files(
-    'README.md',
     'docs/OVERVIEW.md',
     'docs/CLI.md',
     'docs/CONFIG.md',
@@ -177,8 +184,8 @@ install_data(
     'docs/TESTING.md',
     'docs/ENVIRONMENT.md',
     'docs/LAUNCHER.md',
-    'testing/config/morph.conf',
+    'docs/morph.conf.example',
     'testing/test-howto_start-variants.nfo',
   ),
-  install_dir: morph_doc_dir,
+  install_dir: morph_doc_dir / 'docs',
 )

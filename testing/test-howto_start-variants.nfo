@@ -10,8 +10,9 @@ release/debug modes, and crash logging paths.
 Key paths
 ---------
 Project root: <your_local_repo>/morph
-Binary:       <your_local_repo>/morph/build_dbg/morph
-Launcher:     <your_local_repo>/morph/testing/morph-session_dbg
+Release bin:  <your_local_repo>/morph/build/morph
+Debug bin:    <your_local_repo>/morph/build_dbg/morph
+Dev launcher: <your_local_repo>/morph/testing/morph-session_dbg
 Runtime wrapper: /usr/local/bin/morph-session (or your package prefix bindir)
 Env file:     <your_local_repo>/morph/testing/config/environment
 Default cfg:  <your_local_repo>/morph/testing/config/morph.conf
@@ -54,6 +55,10 @@ Pre-checks
 
 4) Run the automated test suite once:
    meson test -C build --print-errorlogs
+
+   This validates the release wrapper path. To validate the debug wrapper
+   explicitly:
+   sh tests/test_shell_runtime.sh --dbg "$PWD"
 
 5) Optional: inspect the current install manifest:
    meson introspect --installed build
@@ -182,9 +187,8 @@ Check:
 
 E) X11 bridge behavior (xwayland-satellite)
 -------------------------------------------
-Session-aware default when MORPH_X11 is unset:
-- nested (x11/wayland): MORPH_X11 defaults to 0
-- native (drm,libinput): MORPH_X11 defaults to 1
+Default when MORPH_X11 is unset:
+- nested and native sessions: MORPH_X11 defaults to 1
 
 Force disable:
   MORPH_X11=0 ./testing/morph-session_dbg

@@ -5,8 +5,11 @@ and uninstall flows for both runtime and development setups.
 
 ## Dependencies
 
+### Building
+
 Morph currently builds against the following primary dependencies:
 
+- `cmake` `>= 3.20`
 - `wlroots-0.19` `>= 0.19`
 - `pixman-1` `>= 0.44`
 - `wayland-server` `>= 1.23`
@@ -26,6 +29,25 @@ especially DRM/libinput and their system libraries.
 
 The authoritative build dependency declarations live in `meson.build`. This
 document mirrors that information so installation steps stay in one place.
+
+### Running
+
+Further dependencies needed to use Morph:
+
+- `xwayland-satellite` `>= 0.8`
+- `alacritty` `>= 0.15`
+
+#### Optional
+
+- Background: `swaybg`
+- Panel: `wbar` or `sfwbar`
+- Sound: `pavucontrol`
+
+### Testing
+
+- `xdpyinfo` `>= 1.3.4`
+- `xset` `>= 1.2.5`
+- 'xterm` `>= 398`
 
 ## Release Install
 

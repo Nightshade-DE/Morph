@@ -19,6 +19,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <wayland-server-core.h>
+#include <xdg-shell-protocol.h>
 #include <wlr/backend.h>
 #include <wlr/backend/libinput.h>
 #include <wlr/interfaces/wlr_keyboard.h>
@@ -2618,6 +2619,15 @@ static void spawn_xwayland_satellite(const char *wayland_display)
 	const char *disable = getenv("MORPH_X11");
 	if (disable && disable[0] && strcmp(disable, "0") == 0)
 	{
+		/*
+		 * Nested X11 backends need the caller's DISPLAY while wlroots starts, but
+		 * child clients must not inherit that host display. Otherwise an X11 app
+		 * launched from inside Morph appears in the parent desktop when the
+		 * satellite bridge is intentionally disabled.
+		 */
+		unsetenv("DISPLAY");
+		unsetenv("XAUTHORITY");
+		wlr_log(WLR_INFO, "xwayland-satellite disabled; DISPLAY unset for child clients");
 		return;
 	}
 
@@ -2629,6 +2639,8 @@ static void spawn_xwayland_satellite(const char *wayland_display)
 		if (n < 0)
 		{
 			wlr_log(WLR_ERROR, "No free X display for xwayland-satellite (tried :2..:99)");
+			unsetenv("DISPLAY");
+			unsetenv("XAUTHORITY");
 			return;
 		}
 		snprintf(display_buf, sizeof(display_buf), ":%d", n);
@@ -2639,6 +2651,8 @@ static void spawn_xwayland_satellite(const char *wayland_display)
 	if (pid < 0)
 	{
 		wlr_log_errno(WLR_ERROR, "fork xwayland-satellite");
+		unsetenv("DISPLAY");
+		unsetenv("XAUTHORITY");
 		return;
 	}
 	if (pid == 0)

@@ -14,7 +14,7 @@
 
 # Optional compatibility switch to allow synthesized builtin binds when no
 # config file can be resolved anywhere.
-MORPH_ALLOW_BUILTIN_FALLBACK=1
+#MORPH_ALLOW_BUILTIN_FALLBACK=1
 
 # Debug mode selector (0,1,2)
 MORPH_DBG=0

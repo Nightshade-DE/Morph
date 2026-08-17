@@ -29,6 +29,7 @@ See [`docs/PROTOCOLS.md`](docs/PROTOCOLS.md) for the exact matrix of implemented
 
 | Path | Purpose |
 |---|---|
+| [`assets/`](assets/) | Runtime assets like icons and other visual resources |
 | [`config/`](config/) | Runtime defaults, user hook templates, portal setup, and sample [`morph.conf`](config/morph.conf) |
 | [`docs/`](docs/) | Current project documentation |
 | [`protocols/`](protocols/) | Wayland protocol XML files used for generated protocol code |
@@ -56,7 +57,7 @@ meson compile -C build
 ./build/morph
 ```
 
-Or use the helper script `morph-build.sh`. See [`INSTALL.md`](INSTALL.md) for more infos.
+Or use the helper script in `scripts/morph-build.sh`. See [`INSTALL.md`](INSTALL.md) for more infos.
 
 ## Tests
 

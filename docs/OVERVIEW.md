@@ -45,14 +45,15 @@ This section is intentionally more detailed than the root [`README.md`](../READM
 
 | Path || Description |
 |---|---|---|
-|└─ [`config/`](../config/) | Runtime defaults and managed session files for **Morph**. ||
+|└─ [`assets/`](assets/) || Runtime assets like icons and other visual resources |
+|└─ [`config/`](../config/) || Runtime defaults and managed session files for **Morph**. |
 |    |└─ [`environment`](../config/environment) | Runtime environment defaults installed to `/etc/morph/environment` and used by [`scripts/morph-session`](../scripts/morph-session). |
 |    |└─ [`morph.conf`](../config/morph.conf) | Runtime base config installed to `/etc/morph/morph.conf`. Can be overridden by copying it to `~/.config/morph/`. |
 |    |└─ [`portals`](../config/portals) | Runtime portal startup script installed to `/etc/morph/`. Can be overridden by copying it to `~/.config/morph/`. |
 |    |└─ [`reload.sh`](../config/reload.sh) | Runtime user reload hook template. See [`Reload Resolution`](LAUNCHER.md#reload-resolution) in `docs/LAUNCHER.md`. |
 |    |└─ [`shutdown.sh`](../config/shutdown.sh) | Runtime user shutdown hook template. See [`Shutdown Hook Resolution`](LAUNCHER.md#shutdown-hook-resolution) in `docs/LAUNCHER.md`. |
 |    |└─ [`startup.sh`](../config/startup.sh) | Runtime user startup hook template. See [`Startup Hook Resolution`](LAUNCHER.md#startup-hook-resolution) in `docs/LAUNCHER.md`. |
-|└─ [`docs/`](.) | Project and developer documentation. ||
+|└─ [`docs/`](.) || Project and developer documentation. |
 |    |└─ [`OVERVIEW.md`](OVERVIEW.md) | Central reading guide, repository map, and managed session flow entry point. |
 |    |└─ [`LAUNCHER.md`](LAUNCHER.md) | Shared wrapper behavior for [`morph-session_dbg`](../testing/morph-session_dbg) and [`morph-session`](../scripts/morph-session). |
 |    |└─ [`ENVIRONMENT.md`](ENVIRONMENT.md) | Runtime environment variables, environment-layer behavior, and XKB notes. |
@@ -69,8 +70,8 @@ This section is intentionally more detailed than the root [`README.md`](../READM
 |    |└─ [`roadmaps/`](roadmaps/) | Branch-specific and topic-specific roadmap documents. |
 |    |   └─ [`Roadmap_install-and-user-setup.md`](roadmaps/Roadmap_install-and-user-setup.md) | English roadmap for the install and user setup rework branch. |
 |    |   └─ [`Roadmap.de.md`](roadmaps/Roadmap.de.md) | German roadmap notes and follow-up tracking. |
-| [`protocols/`](../protocols/) | Wayland protocol XML files for headers and generated sources. ||
-| [`scripts/`](../scripts/) | Helpers for startup, reload, shutdown, install, and session management. ||
+| [`protocols/`](../protocols/) || Wayland protocol XML files for headers and generated sources. |
+| [`scripts/`](../scripts/) || Helpers for startup, reload, shutdown, install, and session management. |
 |    |└─ [`dev-install.sh`](../scripts/dev-install.sh) | Development install script for **Morph** runtime files and helper symlinks from [`testing/config/`](../testing/config/). |
 |    |└─ [`local-build-test.sh`](../scripts/local-build-test.sh) | Local helper to run a build-and-test loop for quick validation while developing. |
 |    |└─ [`morph-build.sh`](../scripts/morph-build.sh) | Unified build helper for runtime/debug variants (`--runtime`, `--debug`, `--both`). |
@@ -83,11 +84,11 @@ This section is intentionally more detailed than the root [`README.md`](../READM
 |    |└─ [`system_startup.sh`](../scripts/system_startup.sh) | System startup script for managed config startup. |
 |    |└─ [`system-uninstall.sh`](../scripts/system-uninstall.sh) | Conservative uninstall helper for Meson-installed **Morph** artifacts. |
 |    |└─ [`test-nested-smoke.sh`](../scripts/test-nested-smoke.sh) | Nested smoke-test helper for quick runtime checks in a development session. |
-| [`sessions/`](../sessions/) | Desktop files for runtime and development sessions. ||
+| [`sessions/`](../sessions/) || Desktop files for runtime and development sessions. |
 |    |└─ [`morph.desktop`](../sessions/morph.desktop) | Runtime desktop file for login managers. |
 |    |└─ [`morph_dbg.desktop`](../sessions/morph_dbg.desktop) | Development desktop file for local repo testing through a display manager. |
-| [`src/`](../src/) | **Morph** compositor source code. ||
-| [`testing/`](../testing/) | Manual tests, launchers, and dev-only runtime files. See [`docs/TESTING.md`](TESTING.md). ||
+| [`src/`](../src/) || **Morph** compositor source code. |
+| [`testing/`](../testing/) || Manual tests, launchers, and dev-only runtime files. See [`docs/TESTING.md`](TESTING.md). |
 |    |└─ [`config/`](../testing/config/) | Development-only copies used by [`morph-session_dbg`](../testing/morph-session_dbg) and [`dev-install.sh`](../scripts/dev-install.sh) so the dev flow stays separate from release runtime files. |
 |    |   └─ [`morph.conf`](../testing/config/morph.conf) | Development base config for [`morph-session_dbg`](../testing/morph-session_dbg) and `dev-install.sh`. |
 |    |   └─ [`environment`](../testing/config/environment) | Development environment file used by [`morph-session_dbg`](../testing/morph-session_dbg). |
@@ -98,7 +99,7 @@ This section is intentionally more detailed than the root [`README.md`](../READM
 |    |└─ [`morph-session_dbg`](../testing/morph-session_dbg) | **Morph** main development startup script. See [`Wrapper Roles`](LAUNCHER.md#wrapper-roles) in `docs/LAUNCHER.md`. |
 |    |└─ [`test-howto_start-variants.nfo`](../testing/test-howto_start-variants.nfo) | Practical native/nested startup variants and focused launcher checks. |
 |    |└─ [`testplan-manual-morph.nfo`](../testing/testplan-manual-morph.nfo) | Broader manual lifecycle, install, uninstall, hook, and fallback test plan. |
-| [`tests/`](../tests/) | Automation tests for the compositor and shell runtime behavior. See [`docs/TESTS.md`](TESTS.md). ||
+| [`tests/`](../tests/) || Automation tests for the compositor and shell runtime behavior. See [`docs/TESTS.md`](TESTS.md). |
 
 ## Managed Session Overview
 
@@ -106,9 +107,10 @@ This is the ready-made **Morph** session path used by login managers or by users
 
 ```mermaid
 flowchart TD
-    A["Login manager / TTY / manual start"]
+    A["Login manager"]
+    A2["TTY / manual start"]
     B["/usr/share/wayland-sessions/morph.desktop [1]"]
-    C["/usr/local/bin/morph-session [2]"]
+    C["/usr/bin/morph-session [2]"]
     D["Resolve environment and config layers"]
     E["Export MORPH_* session variables"]
     F["Start morph binary"]
@@ -136,7 +138,9 @@ User shutdown runs before the managed system cleanup."]
 Reload re-enters the managed flow
 and then calls the user reload hook."]
 
-    A --> B --> C --> D --> E --> F --> G --> H
+    A --> B --> C
+    A2 --> C
+    C --> D --> E --> F --> G --> H
     H --> I --> J --> K
     K --> L --> M --> N --> K
     K --> O --> P --> Q --> R
@@ -151,7 +155,7 @@ and then calls the user reload hook."]
     classDef systemhook fill:#fed7aa,stroke:#ea580c,stroke-width:1px,color:#111827;
     classDef note fill:#fef3c7,stroke:#ca8a04,stroke-width:1px,color:#111827;
 
-    class A,B,C,D,E wrapper;
+    class A,A2,B,C,D,E wrapper;
     class J,N,P userhook;
     class I,M,Q systemhook;
     class X1,X2,X3,X4 note;
@@ -179,7 +183,8 @@ The wrapper is the ready-made session entry point. It turns a display-manager or
 
 ```mermaid
 flowchart TD
-    A["Login manager / TTY / manual start"]
+    A["Login manager"]
+    A2["TTY / manual start"]
     B["morph.desktop"]
     C["morph-session"]
     D["Load environment layers"]
@@ -188,10 +193,14 @@ flowchart TD
     G["Export MORPH_* variables"]
     H["exec morph"]
 
-    A --> B --> C --> D --> E --> F --> G --> H
+    A --> B --> C
+    A2 --> C
+    C --> D --> E --> F --> G --> H
 ```
 
 - The wrapper exists to keep session setup reproducible.
+- Login managers enter through `morph.desktop`, whose `Exec=` starts `morph-session`.
+- TTY and manual launches start `morph-session` directly and skip the desktop file.
 - It is the best entry point when you want **Morph** to own the full session lifecycle.
 - A custom launcher can replace parts of this flow, but then it must deliberately take over those responsibilities.
 

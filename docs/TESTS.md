@@ -25,6 +25,9 @@ Standard run:
 meson test -C build --print-errorlogs
 ```
 
+This runs the shell-runtime launcher checks in release mode through
+`scripts/morph-session` and points the wrapper at `build/morph`.
+
 Verbose run while debugging:
 
 ```bash
@@ -36,6 +39,17 @@ Single test example:
 ```bash
 meson test -C build shell-runtime -v
 ```
+
+Explicit debug-wrapper run:
+
+```bash
+meson setup build_dbg --buildtype=debug
+meson compile -C build_dbg
+sh tests/test_shell_runtime.sh --dbg "$PWD"
+```
+
+Use `--dbg` only when validating `testing/morph-session_dbg` and
+`build_dbg/morph`. The standard Meson test should stay release-compatible.
 
 ## Output
 

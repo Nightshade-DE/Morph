@@ -20,8 +20,7 @@
 #launch /usr/bin/xfce4-power-manager
 
 # Set background color.
-#launch swaybg -c '#80c3d8'
-#launch_nested swaybg -c '#1e691b'
+launch swaybg -c '#ee4f17'
 
 
 # Configure output mode/position/scale/transform.
