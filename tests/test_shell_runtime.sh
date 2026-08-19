@@ -351,9 +351,16 @@ test_system_startup_native_runs_managed_portals() {
     tmpdir=$(make_tmpdir)
     trap 'rm -rf "$tmpdir"' EXIT HUP INT TERM
 
-    mkdir -p "$tmpdir/scripts" "$tmpdir/config"
+    mkdir -p "$tmpdir/scripts" "$tmpdir/config" "$tmpdir/libexec"
     ln -s "$repo_root/scripts/system_startup.sh" "$tmpdir/scripts/system_startup.sh"
     ln -s "$repo_root/scripts/shell-helpers.sh" "$tmpdir/scripts/shell-helpers.sh"
+    for portal_bin in xdg-desktop-portal xdg-desktop-portal-wlr xdg-desktop-portal-gtk; do
+        cat > "$tmpdir/libexec/$portal_bin" <<'EOF'
+#!/bin/sh
+exit 0
+EOF
+        chmod +x "$tmpdir/libexec/$portal_bin"
+    done
     cat > "$tmpdir/config/portals" <<'EOF'
 #!/bin/sh
 morph_start_portals() {
@@ -369,6 +376,7 @@ EOF
     export MORPH_STARTUP_LOG_FILE="$tmpdir/startup.log"
     export MORPH_SESSION_MODE=native
     export MORPH_SYSTEM_CONFIG_DIR="$tmpdir/config"
+    export MORPH_PORTAL_LIBEXEC_DIR="$tmpdir/libexec"
     export XDG_CONFIG_HOME="$tmpdir/xdg-config"
     export PORTAL_MARKER_FILE="$tmpdir/portal-marker"
     : > "$MORPH_STARTUP_LOG_FILE"
@@ -379,9 +387,11 @@ EOF
     . "$tmpdir/scripts/system_startup.sh"
 
     assert_file_contains "$PORTAL_MARKER_FILE" "managed portals called"
+    assert_file_contains "$MORPH_STARTUP_LOG_FILE" "Portal executable directory: $tmpdir/libexec."
     assert_file_contains "$MORPH_STARTUP_LOG_FILE" "Loaded managed portals file: $tmpdir/config/portals."
     assert_file_contains "$MORPH_STARTUP_LOG_FILE" "Stub portal runtime started."
 
+    unset MORPH_PORTAL_LIBEXEC_DIR
     rm -rf "$tmpdir"
     trap - EXIT HUP INT TERM
 }
@@ -488,12 +498,64 @@ EOF
     trap - EXIT HUP INT TERM
 }
 
+test_morph_source_portals_reports_missing_executables() {
+    tmpdir=$(make_tmpdir)
+    trap 'rm -rf "$tmpdir"' EXIT HUP INT TERM
+
+    mkdir -p "$tmpdir/config" "$tmpdir/libexec"
+    cat > "$tmpdir/libexec/xdg-desktop-portal" <<'EOF'
+#!/bin/sh
+exit 0
+EOF
+    chmod +x "$tmpdir/libexec/xdg-desktop-portal"
+    cat > "$tmpdir/config/portals" <<'EOF'
+#!/bin/sh
+morph_start_portals() {
+    :
+}
+EOF
+
+    export CURRENT_LOG_FILE="$tmpdir/startup.log"
+    export MORPH_SESSION_MODE=native
+    export MORPH_SYSTEM_CONFIG_DIR="$tmpdir/config"
+    export MORPH_PORTAL_LIBEXEC_DIR="$tmpdir/libexec"
+    export XDG_CONFIG_HOME="$tmpdir/xdg-config"
+    : > "$CURRENT_LOG_FILE"
+
+    # shellcheck disable=SC1090
+    . "$repo_root/scripts/shell-helpers.sh"
+
+    set +e
+    morph_source_portals
+    status=$?
+    set -e
+
+    if [ "$status" -eq 0 ]; then
+        fail "morph_source_portals must fail when the configured portal libexec directory is incomplete"
+    fi
+
+    assert_file_contains \
+        "$CURRENT_LOG_FILE" \
+        "MORPH_PORTAL_LIBEXEC_DIR was set but does not contain the complete default portal set: $tmpdir/libexec"
+    assert_file_contains \
+        "$CURRENT_LOG_FILE" \
+        "Portal executable candidate is incomplete: $tmpdir/libexec (missing: xdg-desktop-portal-wlr, xdg-desktop-portal-gtk)"
+    assert_file_contains \
+        "$CURRENT_LOG_FILE" \
+        "No complete xdg-desktop-portal default set found in MORPH_PORTAL_LIBEXEC_DIR or known libexec paths."
+
+    unset MORPH_PORTAL_LIBEXEC_DIR
+    rm -rf "$tmpdir"
+    trap - EXIT HUP INT TERM
+}
+
 test_portals_log_effective_runtime_values() {
     tmpdir=$(make_tmpdir)
     trap 'rm -rf "$tmpdir"' EXIT HUP INT TERM
 
     export CURRENT_LOG_FILE="$tmpdir/startup.log"
     export MORPH_SESSION_MODE=native
+    export MORPH_PORTAL_LIBEXEC_DIR="$tmpdir/libexec"
     export XDG_CURRENT_DESKTOP="GNOME"
     : > "$CURRENT_LOG_FILE"
 
@@ -518,6 +580,7 @@ test_portals_log_effective_runtime_values() {
         "$CURRENT_LOG_FILE" \
         "Set portal variables (QT_QPA_PLATFORM=wayland;xcb, GDK_BACKEND=wayland,x11, GTK_USE_PORTAL=1, XDG_CURRENT_DESKTOP=GNOME)."
 
+    unset MORPH_PORTAL_LIBEXEC_DIR
     rm -rf "$tmpdir"
     trap - EXIT HUP INT TERM
 }
@@ -675,15 +738,16 @@ test_launcher_fails_when_no_config_exists() {
     trap 'rm -rf "$tmpdir"' EXIT HUP INT TERM
 
     mkdir -p "$tmpdir/empty-config" "$tmpdir/state"
-    set +e
-    run_launcher_resolve_only \
+    if run_launcher_resolve_only \
         XDG_CONFIG_HOME="$tmpdir/empty-config" \
         XDG_STATE_HOME="$tmpdir/state" \
         MORPH_SYSTEM_CONFIG_FILE="$tmpdir/missing-system-config" \
         MORPH_ALLOW_BUILTIN_FALLBACK=0 \
-        MORPH_RESOLVE_ONLY=1 >/dev/null 2>"$tmpdir/stderr.log"
-    status=$?
-    set -e
+        MORPH_RESOLVE_ONLY=1 >/dev/null 2>"$tmpdir/stderr.log"; then
+        fail "launcher missing config path unexpectedly succeeded"
+    else
+        status=$?
+    fi
 
     assert_command_fails "$status" "launcher missing config path"
     assert_file_contains "$tmpdir/stderr.log" "No readable morph config found in user or system locations."
@@ -752,10 +816,18 @@ test_launcher_uses_expected_mode_binary() {
     tmpdir=$(make_tmpdir)
     trap 'rm -rf "$tmpdir"' EXIT HUP INT TERM
 
-    mkdir -p "$tmpdir/state"
+    mkdir -p "$tmpdir/empty-config" "$tmpdir/system-config" "$tmpdir/state"
+    cat > "$tmpdir/system-config/morph.conf" <<'EOF'
+[bind]
+mods = Super
+key = Q
+action = quit
+EOF
 
     run_launcher_resolve_only \
+        XDG_CONFIG_HOME="$tmpdir/empty-config" \
         XDG_STATE_HOME="$tmpdir/state" \
+        MORPH_SYSTEM_CONFIG_FILE="$tmpdir/system-config/morph.conf" \
         MORPH_RESOLVE_ONLY=1
 
     assert_log_field_contains \
@@ -840,7 +912,8 @@ test_meson_install_manifest_lists_runtime_artifacts() {
     assert_file_contains "$manifest" "/etc/morph/morph.conf"
     assert_file_contains "$manifest" "/etc/morph/system_startup.sh"
     assert_file_contains "$manifest" "/usr/share/wayland-sessions/morph.desktop"
-    assert_file_contains "$manifest" "/usr/share/doc/morph/CONFIG.md"
+    assert_file_contains "$manifest" "/usr/share/doc/morph/docs/CONFIG.md"
+    assert_file_contains "$manifest" "/usr/share/doc/morph/docs/morph.conf.example"
 
     rm -rf "$tmpdir"
     trap - EXIT HUP INT TERM
@@ -872,6 +945,7 @@ test_system_startup_native_runs_managed_portals
 test_system_startup_runs_user_hook_command
 test_system_startup_runs_variable_based_user_hook_file
 test_morph_config_hook_from_file_reads_hooks_section
+test_morph_source_portals_reports_missing_executables
 test_portals_log_effective_runtime_values
 test_system_shutdown_cleans_registered_processes
 test_system_shutdown_skips_missing_configured_hook_file

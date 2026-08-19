@@ -9,13 +9,24 @@ and uninstall flows for both runtime and development setups.
 
 Morph currently builds against the following primary dependencies:
 
-- `cmake` `>= 3.20`
-- `wlroots-0.19` `>= 0.19`
-- `pixman-1` `>= 0.44`
-- `wayland-server` `>= 1.23`
-- `xkbcommon` `>= 1.7`
-- `wayland-protocols` `>= 1.32`
-- `wayland-scanner` `>= 1.23`
+| Arch | Debian | Fedora | Bedrock | >= version |
+|---|---|---|---|---|
+| | | gcc-c++ | | 16 |
+| cmake | cmake | cmake | cmake | 3.20 |
+| meson | meson | meson | meson | 1.11 |
+| | | pkgconf-pkg-config | | 2.5 |
+| | | wlroots-devel | | 0.19 |
+| | | libwayland-server | | 1.25 |
+| | | xwayland-satellite | | 0.8 |
+| | | wayland-protocols-devel | | 1.49 |
+| | | wlr-protocols-devel | | |
+| | | xdg-desktop-portal-wlr | | 0.84 |
+| | | xdg-desktop-portal-gtk | | 1.15 |
+| | wayland-scanner | N/A | | |
+| | | libxkbcommon | | 1.13 |
+| | pixman-1 | | 0.44 |
+
+
 - POSIX shell `sh`
 
 Version note:
@@ -34,7 +45,6 @@ document mirrors that information so installation steps stay in one place.
 
 Further dependencies needed to use Morph:
 
-- `xwayland-satellite` `>= 0.8`
 - `alacritty` `>= 0.15`
 
 #### Optional
@@ -48,6 +58,8 @@ Further dependencies needed to use Morph:
 - `xdpyinfo` `>= 1.3.4`
 - `xset` `>= 1.2.5`
 - 'xterm` `>= 398`
+- `rg` (ripgrep) `>= 14`
+- `jq` `>= 1.8`
 
 ## Release Install
 
@@ -148,6 +160,12 @@ Options:
   - prints the commands needed to expose the development session through
     system paths such as `/usr/bin` and `/usr/share/wayland-sessions`
 
+For display-manager-visible development sessions, the system launcher at
+`/usr/bin/morph-session_dbg` is installed as a real wrapper file. The wrapper
+executes the repository's `testing/morph-session_dbg` entry point instead of
+being a symlink into the user's home directory. The local launcher created by
+`--link-launcher` remains a symlink for fast repository-based shell testing.
+
 Safety behavior:
 
 - existing real user files are never replaced
@@ -201,6 +219,19 @@ from:
 ./scripts/dev-install.sh install --print-sudo-help
 ```
 
+Some login managers, including LightDM setups, must be able to traverse the
+repository path because the development session files are symlinks into your
+checkout. If the display manager cannot start the development session because it
+cannot access files below your home directory, allow directory traversal on your
+home directory:
+
+```bash
+chmod o+x "$HOME"
+```
+
+This grants execute/traverse permission only. It does not grant permission to
+list the contents of your home directory.
+
 ## Morph scripts for building, installing, and uninstalling
 
 There are dedicated Morph helper scripts that make building, installing, and uninstalling a bit easier.
@@ -231,16 +262,18 @@ Build script modes:
 Install script modes:
 
 - `--runtime` runs `meson install -C build`
-- `--debug` installs `/usr/bin/morph_dbg`, `/usr/bin/morph-session_dbg`, and
-  `/usr/share/wayland-sessions/morph_dbg.desktop`
+- `--debug` delegates to `dev-install.sh install --link-launcher --system-links`
+  and creates repository-backed user config links, `~/.local/bin/morph-session_dbg`,
+  and the display-manager-visible debug session links under `/usr`
 - `--both` runs runtime install first, then debug install
 - `--dry` prints install commands only
 
 Uninstall script modes:
 
 - `--runtime` runs `./scripts/system-uninstall.sh --builddir build --remove`
-- `--debug` removes `/usr/bin/morph_dbg`, `/usr/bin/morph-session_dbg`, and
-  `/usr/share/wayland-sessions/morph_dbg.desktop`
+- `--debug` delegates to `dev-install.sh uninstall --link-launcher --system-links`
+  and removes only matching repository-backed user links plus the system-visible
+  debug session links
 - `--both` runs runtime uninstall first, then debug uninstall
 - `--dry` prints uninstall commands only
 
@@ -257,4 +290,3 @@ This is the right path for:
 - system-wide testing through a display manager
 - packaging
 - any setup that should match the runtime file layout
-

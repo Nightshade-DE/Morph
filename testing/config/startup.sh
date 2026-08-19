@@ -31,7 +31,7 @@ launch swaybg -c '#80c3d8'
 #     output HDMI-A-1 position 1366,0
 #     output eDP-1 position 0,0
 #   }
-launch kanshi
+#launch kanshi
 
 
 # Session Components
@@ -47,7 +47,7 @@ log_startup INFO "Starting user startup example components."
 #     resume 'wlopm --on \*'
 
 # Launch a panel such as yambar or waybar.
-#launch sfwbar
+launch sfwbar
 log_startup INFO "Started panel sfwbar."
 #launch waybar -c ./config/waybar-morph.jsonc -s ./config/waybar-morph.css
 #log_startup INFO "Started waybar."
@@ -58,8 +58,8 @@ launch dunst
 log_startup INFO "Started notification client dunst."
 
 # start editor/viewer with config to see the bindings
-launch mousepad "${HOME}"/.config/morph/morph.conf
-log_startup INFO "Started editor with ~/.config/morph/morph.conf."
+#launch mousepad "${HOME}"/.config/morph/morph.conf
+#log_startup INFO "Started editor with ~/.config/morph/morph.conf."
 
 # Lock after 5 minutes; power off displays after 10 minutes.
 # Restart kanshi when leaving powersave.
@@ -68,12 +68,12 @@ log_startup INFO "Started editor with ~/.config/morph/morph.conf."
 # rearrange windows (since a837fef). Use wlr-output-power-management clients
 # such as wlopm instead: https://git.sr.ht/~leon_plickat/wlopm
 
-launch swayidle -w \
-    timeout 300 'swaylock -f -c 000000' \
-    timeout 600 'pkill kanshi; wlopm --off \*' \
-    resume 'kanshi &wlopm --on \*' \
-    before-sleep 'swaylock -f -c 000000'
-log_startup INFO "Started swayidle with swaylock (5 min idle time)."
+#launch swayidle -w \
+#    timeout 300 'swaylock -f -c 000000' \
+#    timeout 600 'pkill kanshi; wlopm --off \*' \
+#    resume 'kanshi &wlopm --on \*' \
+#    before-sleep 'swaylock -f -c 000000'
+#log_startup INFO "Started swayidle with swaylock (5 min idle time)."
 
 # ==============================================================================
 log_startup INFO "Startup hook completed."

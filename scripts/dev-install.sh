@@ -2,6 +2,8 @@
 # Development install helper for morph runtime files.
 # - Creates opt-in symlinks for user config files under ~/.config/morph.
 # - Can expose the dev launcher through ~/.local/bin for quick shell runs.
+# - Installs a real system launcher wrapper so display managers do not have to
+#   execute a repository symlink from a user home directory.
 # - Prints explicit sudo guidance for display-manager-visible dev session setup.
 ################################################################################
 
@@ -29,7 +31,8 @@ Usage: scripts/dev-install.sh <install|uninstall> [options]
 Options:
   --link-launcher      Symlink testing/morph-session_dbg into ~/.local/bin/morph-session_dbg
     --desktop-local      Copy debug session desktop file and icon into ~/.local/share
-  --system-links       Install/remove system-visible debug symlinks under /usr
+  --system-links       Install/remove system-visible debug links under /usr
+  --skip-user-links    Internal: skip ~/.config/morph links for wrapper split phases
   --dry                Print planned commands only (no changes)
   --print-sudo-help    Print sudo commands for a display-manager-visible dev session
 
@@ -68,9 +71,11 @@ print_target_line() {
 
 print_install_targets() {
     printf 'dev install targets:\n'
-    for rel in morph.conf startup.sh reload.sh shutdown.sh environment portals; do
-        print_target_line "$COMP_ROOT_DIR/testing/config/$rel" "$USER_CONFIG_DIR/$rel" symlink
-    done
+    if [ "$SKIP_USER_LINKS" -eq 0 ]; then
+        for rel in morph.conf startup.sh reload.sh shutdown.sh environment portals; do
+            print_target_line "$COMP_ROOT_DIR/testing/config/$rel" "$USER_CONFIG_DIR/$rel" symlink
+        done
+    fi
 
     if [ "$LINK_LAUNCHER" -eq 1 ]; then
         print_target_line "$COMP_ROOT_DIR/testing/morph-session_dbg" "$USER_BIN_DIR/morph-session_dbg" symlink
@@ -83,7 +88,7 @@ print_install_targets() {
 
     if [ "$SYSTEM_LINKS" -eq 1 ]; then
         print_target_line "$COMP_ROOT_DIR/build_dbg/morph" "$SYSTEM_DEV_BIN_TARGET" symlink
-        print_target_line "$COMP_ROOT_DIR/testing/morph-session_dbg" "$SYSTEM_DEV_LAUNCHER_TARGET" symlink
+        print_target_line "$COMP_ROOT_DIR/testing/morph-session_dbg" "$SYSTEM_DEV_LAUNCHER_TARGET" wrapper
         print_target_line "$COMP_ROOT_DIR/sessions/morph_dbg.desktop" "$SYSTEM_DEV_DESKTOP_TARGET" symlink
         print_target_line "$COMP_ROOT_DIR/assets/icons/morph_dbg.svg" "$SYSTEM_ICON_DIR/morph_dbg.svg" symlink
     fi
@@ -145,8 +150,27 @@ unlink_if_matches() {
     printf 'Removed symlink %s\n' "$dst"
 }
 
+remove_empty_dir_if_possible() {
+    dir="$1"
+
+    if [ "$DRY" -eq 1 ]; then
+        printf '[dry] rmdir %s 2>/dev/null || true
+' "$dir"
+        return 0
+    fi
+
+    if rmdir "$dir" 2>/dev/null; then
+        printf 'Removed empty directory %s
+' "$dir"
+    fi
+}
+
 install_user_links() {
-    mkdir -p "$USER_CONFIG_DIR"
+    if [ "$DRY" -eq 1 ]; then
+        printf '[dry] mkdir -p %s\n' "$USER_CONFIG_DIR"
+    else
+        mkdir -p "$USER_CONFIG_DIR"
+    fi
 
     for rel in morph.conf startup.sh reload.sh shutdown.sh environment portals; do
         link_if_missing "$COMP_ROOT_DIR/testing/config/$rel" "$USER_CONFIG_DIR/$rel"
@@ -157,10 +181,16 @@ uninstall_user_links() {
     for rel in morph.conf startup.sh reload.sh shutdown.sh environment portals; do
         unlink_if_matches "$COMP_ROOT_DIR/testing/config/$rel" "$USER_CONFIG_DIR/$rel"
     done
+
+    remove_empty_dir_if_possible "$USER_CONFIG_DIR"
 }
 
 install_local_launcher_link() {
-    mkdir -p "$USER_BIN_DIR"
+    if [ "$DRY" -eq 1 ]; then
+        printf '[dry] mkdir -p %s\n' "$USER_BIN_DIR"
+    else
+        mkdir -p "$USER_BIN_DIR"
+    fi
     link_if_missing "$COMP_ROOT_DIR/testing/morph-session_dbg" "$USER_BIN_DIR/morph-session_dbg"
 }
 
@@ -197,21 +227,38 @@ install_system_links() {
     run_root install -d /usr/share/wayland-sessions
     run_root install -d "$SYSTEM_ICON_DIR"
     run_root ln -sfn "$COMP_ROOT_DIR/build_dbg/morph" "$SYSTEM_DEV_BIN_TARGET"
-    run_root ln -sfn "$COMP_ROOT_DIR/testing/morph-session_dbg" "$SYSTEM_DEV_LAUNCHER_TARGET"
+    if [ "$DRY" -eq 1 ]; then
+        printf '[dry] install -m 0755 generated morph-session_dbg wrapper at %s\n' "$SYSTEM_DEV_LAUNCHER_TARGET"
+    else
+        wrapper_tmp=$(mktemp)
+        trap 'rm -f "$wrapper_tmp"' EXIT HUP INT TERM
+        printf '%s\n' '#!/bin/sh' "exec \"$COMP_ROOT_DIR/testing/morph-session_dbg\" \"\$@\"" > "$wrapper_tmp"
+        run_root install -m 0755 "$wrapper_tmp" "$SYSTEM_DEV_LAUNCHER_TARGET"
+        rm -f "$wrapper_tmp"
+        trap - EXIT HUP INT TERM
+    fi
     run_root ln -sfn "$COMP_ROOT_DIR/sessions/morph_dbg.desktop" "$SYSTEM_DEV_DESKTOP_TARGET"
     run_root ln -sfn "$COMP_ROOT_DIR/assets/icons/morph_dbg.svg" "$SYSTEM_ICON_DIR/morph_dbg.svg"
 }
 
 uninstall_system_links() {
     run_root rm -f "$SYSTEM_DEV_BIN_TARGET"
-    run_root rm -f "$SYSTEM_DEV_LAUNCHER_TARGET"
+    if [ "$DRY" -eq 1 ]; then
+        printf '[dry] rm -f %s\n' "$SYSTEM_DEV_LAUNCHER_TARGET"
+    elif [ -f "$SYSTEM_DEV_LAUNCHER_TARGET" ] && [ ! -L "$SYSTEM_DEV_LAUNCHER_TARGET" ] && grep -Fqx "exec \"$COMP_ROOT_DIR/testing/morph-session_dbg\" \"\$@\"" "$SYSTEM_DEV_LAUNCHER_TARGET"; then
+        run_root rm -f "$SYSTEM_DEV_LAUNCHER_TARGET"
+    elif [ -L "$SYSTEM_DEV_LAUNCHER_TARGET" ]; then
+        run_root rm -f "$SYSTEM_DEV_LAUNCHER_TARGET"
+    else
+        printf 'Keeping unrelated system launcher: %s\n' "$SYSTEM_DEV_LAUNCHER_TARGET"
+    fi
     run_root rm -f "$SYSTEM_DEV_DESKTOP_TARGET"
     run_root rm -f "$SYSTEM_ICON_DIR/morph_dbg.svg"
 }
 
 print_sudo_help() {
     printf 'Display-manager-visible dev session install:\n'
-    printf '  sudo ln -sf %s %s\n' "$COMP_ROOT_DIR/testing/morph-session_dbg" "$SYSTEM_DEV_LAUNCHER_TARGET"
+    printf '  sudo ./scripts/dev-install.sh install --system-links --skip-user-links\n'
     printf '  sudo ln -sf %s %s\n' "$COMP_ROOT_DIR/sessions/morph_dbg.desktop" "$SYSTEM_DEV_DESKTOP_TARGET"
     printf '  sudo install -d %s\n' "$SYSTEM_ICON_DIR"
     printf '  sudo ln -sf %s %s/morph_dbg.svg\n' "$COMP_ROOT_DIR/assets/icons/morph_dbg.svg" "$SYSTEM_ICON_DIR"
@@ -237,6 +284,7 @@ shift || true
 LINK_LAUNCHER=0
 DESKTOP_LOCAL=0
 SYSTEM_LINKS=0
+SKIP_USER_LINKS=0
 DRY=0
 PRINT_SUDO_HELP=0
 
@@ -245,6 +293,7 @@ while [ $# -gt 0 ]; do
         --link-launcher) LINK_LAUNCHER=1 ;;
         --desktop-local) DESKTOP_LOCAL=1 ;;
         --system-links) SYSTEM_LINKS=1 ;;
+        --skip-user-links) SKIP_USER_LINKS=1 ;;
         --dry) DRY=1 ;;
         --print-sudo-help) PRINT_SUDO_HELP=1 ;;
         -h|--help)
@@ -264,8 +313,11 @@ case "$ACTION" in
     install)
         print_install_targets
 
-        # Core dev flow: link testing config into ~/.config/morph.
-        install_user_links
+        # Core dev flow: link testing config into ~/.config/morph unless a
+        # higher-level wrapper intentionally split user and system phases.
+        if [ "$SKIP_USER_LINKS" -eq 0 ]; then
+            install_user_links
+        fi
         if [ "$LINK_LAUNCHER" -eq 1 ]; then
             install_local_launcher_link
         fi
@@ -280,7 +332,9 @@ case "$ACTION" in
         fi
         ;;
     uninstall)
-        uninstall_user_links
+        if [ "$SKIP_USER_LINKS" -eq 0 ]; then
+            uninstall_user_links
+        fi
         if [ "$LINK_LAUNCHER" -eq 1 ]; then
             uninstall_local_launcher_link
         fi

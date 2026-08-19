@@ -240,6 +240,43 @@ morph_portal_libexec_dir() {
     return 1
 }
 
+morph_log_portal_libexec_candidate() {
+    candidate="$1"
+    missing=""
+
+    if [ ! -d "$candidate" ]; then
+        log_startup WARN "Portal executable candidate is not a directory: $candidate"
+        return 0
+    fi
+
+    for portal_bin in xdg-desktop-portal xdg-desktop-portal-wlr xdg-desktop-portal-gtk; do
+        if [ ! -x "$candidate/$portal_bin" ]; then
+            if [ -z "$missing" ]; then
+                missing="$portal_bin"
+            else
+                missing="$missing, $portal_bin"
+            fi
+        fi
+    done
+
+    if [ -n "$missing" ]; then
+        log_startup WARN "Portal executable candidate is incomplete: $candidate (missing: $missing)"
+    fi
+}
+
+morph_log_portal_libexec_resolution_failure() {
+    if [ -n "${MORPH_PORTAL_LIBEXEC_DIR:-}" ]; then
+        log_startup WARN "MORPH_PORTAL_LIBEXEC_DIR was set but does not contain the complete default portal set: $MORPH_PORTAL_LIBEXEC_DIR"
+        morph_log_portal_libexec_candidate "$MORPH_PORTAL_LIBEXEC_DIR"
+        return 0
+    fi
+
+    for candidate in /usr/libexec /usr/lib /usr/local/libexec /usr/local/lib; do
+        morph_log_portal_libexec_candidate "$candidate"
+    done
+}
+
+
 # Return the last configured hook command from a config file's [hooks] section.
 morph_config_hook_from_file() {
     hook_kind="$1"
@@ -397,10 +434,12 @@ morph_source_portals() {
     base_portals_file="$(morph_managed_config_dir)/portals"
     user_portals_file="$(morph_user_config_dir)/portals"
 
-    if ! MORPH_PORTAL_LIBEXEC_DIR="$(morph_portal_libexec_dir)"; then
+    if ! resolved_portal_libexec_dir="$(morph_portal_libexec_dir)"; then
+        morph_log_portal_libexec_resolution_failure
         log_startup ERROR "No complete xdg-desktop-portal default set found in MORPH_PORTAL_LIBEXEC_DIR or known libexec paths."
         return 1
     fi
+    MORPH_PORTAL_LIBEXEC_DIR="$resolved_portal_libexec_dir"
     export MORPH_PORTAL_LIBEXEC_DIR
     log_startup INFO "Portal executable directory: $MORPH_PORTAL_LIBEXEC_DIR."
 

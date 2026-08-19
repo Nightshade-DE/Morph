@@ -17,14 +17,17 @@ Options:
   --dry       Print commands only (no changes)
 
 Debug install artifacts:
-    - /usr/bin/morph_dbg            (symlink to ./build_dbg/morph)
-    - /usr/bin/morph-session_dbg    (symlink to ./testing/morph-session_dbg)
-    - /usr/share/wayland-sessions/morph_dbg.desktop (symlink to ./sessions/morph_dbg.desktop)
-    - /usr/share/icons/hicolor/scalable/apps/morph_dbg.svg (symlink to ./assets/icons/morph_dbg.svg)
+  - ~/.config/morph/* symlinks to testing/config/* when no real user files exist
+  - ~/.local/bin/morph-session_dbg symlink to ./testing/morph-session_dbg
+  - /usr/bin/morph_dbg symlink to ./build_dbg/morph
+  - /usr/bin/morph-session_dbg wrapper for ./testing/morph-session_dbg
+  - /usr/share/wayland-sessions/morph_dbg.desktop symlink to ./sessions/morph_dbg.desktop
+  - /usr/share/icons/hicolor/scalable/apps/morph_dbg.svg symlink to ./assets/icons/morph_dbg.svg
 
 Notes:
   - Runtime install stays Meson-managed.
-  - Debug install uses plain install(1) for explicit dev targets.
+  - Debug install delegates to scripts/dev-install.sh so user-local and
+    display-manager-visible dev entry points stay in sync.
 EOF
 }
 
@@ -83,75 +86,48 @@ print_runtime_dry_plan() {
         | sed -nE 's/^[[:space:]]*\{[[:space:]]*//; s/[[:space:]]*\}[[:space:]]*$//; s/^[[:space:]]*"([^"]+)"[[:space:]]*:[[:space:]]*"([^"]+)"[[:space:]]*$/  \2 <= \1/p'
 }
 
-print_target_line() {
-    src="$1"
-    dst="$2"
-    mode="$3"
-    printf '  %s <= %s (%s)\n' "$dst" "$src" "$mode"
+require_dev_install_helper() {
+    if [ ! -x "scripts/dev-install.sh" ]; then
+        printf 'Missing dev install helper: ./scripts/dev-install.sh\n' >&2
+        exit 1
+    fi
 }
 
-print_debug_plan() {
-    printf 'debug install targets:\n'
-
-    print_target_line "$PWD/build_dbg/morph" /usr/bin/morph_dbg symlink
-    print_target_line "$PWD/testing/morph-session_dbg" /usr/bin/morph-session_dbg symlink
-    print_target_line "$PWD/sessions/morph_dbg.desktop" /usr/share/wayland-sessions/morph_dbg.desktop symlink
-    print_target_line "$PWD/assets/icons/morph_dbg.svg" /usr/share/icons/hicolor/scalable/apps/morph_dbg.svg symlink
-}
-
-install_debug_file() {
-    mode="$1"
-    src="$2"
-    dst="$3"
-
-    if [ "$DRY" -eq 1 ]; then
-        run_root install -C -m "$mode" "$src" "$dst"
-        return 0
+run_as_invoking_user() {
+    if [ "$(id -u)" -ne 0 ] || [ -z "${SUDO_USER:-}" ] || [ "${SUDO_USER:-}" = root ]; then
+        "$@"
+        return $?
     fi
 
-    # Report whether the destination was newly created, updated, or unchanged.
-    status="installed"
-    if [ -e "$dst" ]; then
-        if [ -f "$dst" ] && cmp -s "$src" "$dst"; then
-            status="unchanged"
-        else
-            status="updated"
-        fi
-    fi
-
-    run_root install -C -m "$mode" "$src" "$dst"
-    printf '[morph-install] %s: %s\n' "$status" "$dst"
-}
-
-install_debug_symlink() {
-    src="$1"
-    dst="$2"
-
-    src_abs=$(readlink -f "$src")
-    if [ -z "$src_abs" ] || [ ! -e "$src_abs" ]; then
-        printf 'Missing symlink source: %s\n' "$src" >&2
+    user_home=$(getent passwd "$SUDO_USER" | cut -d: -f6)
+    if [ -z "$user_home" ]; then
+        printf 'Unable to resolve home directory for sudo user: %s\n' "$SUDO_USER" >&2
         exit 1
     fi
 
+    # User-local dev links must belong to the invoking user even when the
+    # combined install helper itself was started with sudo for the /usr phase.
+    sudo -u "$SUDO_USER" env HOME="$user_home" XDG_CONFIG_HOME="$user_home/.config" "$@"
+}
+
+run_dev_install_user_links() {
+    require_dev_install_helper
+
     if [ "$DRY" -eq 1 ]; then
-        run_root ln -sfn "$src_abs" "$dst"
-        return 0
+        run_as_invoking_user ./scripts/dev-install.sh install --link-launcher --dry
+    else
+        run_as_invoking_user ./scripts/dev-install.sh install --link-launcher
     fi
+}
 
-    status="linked"
-    if [ -L "$dst" ]; then
-        current_target=$(readlink -f "$dst")
-        if [ "$current_target" = "$src_abs" ]; then
-            status="unchanged"
-        else
-            status="updated"
-        fi
-    elif [ -e "$dst" ]; then
-        status="updated"
+run_dev_install_system_links() {
+    require_dev_install_helper
+
+    if [ "$DRY" -eq 1 ]; then
+        ./scripts/dev-install.sh install --system-links --skip-user-links --dry
+    else
+        ./scripts/dev-install.sh install --system-links --skip-user-links
     fi
-
-    run_root ln -sfn "$src_abs" "$dst"
-    printf '[morph-install] %s symlink: %s -> %s\n' "$status" "$dst" "$src_abs"
 }
 
 install_runtime() {
@@ -180,31 +156,8 @@ install_debug() {
         exit 1
     fi
 
-    if [ ! -f "testing/morph-session_dbg" ]; then
-        printf 'Missing dev launcher source: ./testing/morph-session_dbg\n' >&2
-        exit 1
-    fi
-
-    if [ ! -f "sessions/morph_dbg.desktop" ]; then
-        printf 'Missing dev desktop source: ./sessions/morph_dbg.desktop\n' >&2
-        exit 1
-    fi
-
-    if [ ! -f "assets/icons/morph_dbg.svg" ]; then
-        printf 'Missing icon source: ./assets/icons/morph_dbg.svg\n' >&2
-        exit 1
-    fi
-
-    print_debug_plan
-
-    # Ensure destination directories exist before installing explicit debug artifacts.
-    run_root install -d /usr/bin
-    run_root install -d /usr/share/wayland-sessions
-    run_root install -d /usr/share/icons/hicolor/scalable/apps
-    install_debug_symlink build_dbg/morph /usr/bin/morph_dbg
-    install_debug_symlink testing/morph-session_dbg /usr/bin/morph-session_dbg
-    install_debug_symlink sessions/morph_dbg.desktop /usr/share/wayland-sessions/morph_dbg.desktop
-    install_debug_symlink assets/icons/morph_dbg.svg /usr/share/icons/hicolor/scalable/apps/morph_dbg.svg
+    run_dev_install_user_links
+    run_dev_install_system_links
 }
 
 case "$MODE" in

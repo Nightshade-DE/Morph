@@ -44,9 +44,9 @@ The following Linux distributions will be tested in this report:
 
 | Arch | Debian | Fedora | Bedrock | Description |
 |---|---|---|---|---|
-|[x]|[ ]|[ ]|[ ]| **First build: `(rm -rf build/;) meson setup build`**|
-|[x]|[ ]|[ ]|[ ]| **Follow-up builds: `meson setup build --reconfigure`** |
-|[x]|[ ]|[ ]|[ ]| **`meson test -C build --print-errorlogs`** |
+|[x]|[ ]|[x]|[ ]| **First build: `(rm -rf build/;) meson setup build`**|
+|[x]|[ ]|[x]|[ ]| **Follow-up builds: `meson setup build --reconfigure`** |
+|[x]|[ ]|[x]|[ ]| **`meson test -C build --print-errorlogs`** |
 
 Expected:
 - Build configures and compiles `morph`
@@ -102,7 +102,7 @@ rm ~/.local/state/morph/*
 
 | Arch | Debian | Fedora | Bedrock | Description |
 |---|---|---|---|---|
-|[x]|[ ]|[ ]|[ ]| **Default release-wrapper resolution** |
+|[x]|[ ]|[x]|[ ]| **Default release-wrapper resolution** |
 
 ```bash
 MORPH_RESOLVE_ONLY=1 MORPH_BIN="$PWD/build/morph" \
@@ -123,7 +123,9 @@ Expected:
 
 ### 2.2. Debug-wrapper resolution
 
-- [x] **Debug-wrapper resolution**
+| Arch | Debian | Fedora | Bedrock | Description |
+|---|---|---|---|---|
+|[x]|[ ]|[x]|[ ]| **Debug-wrapper resolution** |
 
 ```bash
 MORPH_RESOLVE_ONLY=1 ./testing/morph-session_dbg
@@ -254,7 +256,7 @@ rm ~/.local/state/morph/*
 
 | Arch | Debian | Fedora | Bedrock | Description |
 |---|---|---|---|---|
-|[x]|[ ]|[ ]|[ ]| **Default release-wrapper config resolution** |
+|[x]|[ ]|[x]|[ ]| **Default release-wrapper config resolution** |
 
 Prepare the user config state before this check. The system fallback is only
 visible when no readable user config exists at
@@ -281,7 +283,7 @@ Expected:
 - Without a readable user config, the reason is `system config fallback`.
 - The run ends with `Resolve-only mode requested; skipping compositor start after priority checks.`
 
-- [x] **User config exists - user-fallback**
+[x] **User config exists - user-fallback**
 
 Create a user config and run the same command again to verify the user fallback:
 
@@ -454,7 +456,7 @@ rm ~/.local/state/morph/*
 
 | Arch | Debian | Fedora | Bedrock | Description |
 |---|---|---|---|---|
-|[x]|[ ]|[ ]|[ ]| **Start the release wrapper as native session** |
+|[x]|[ ]|[x]|[ ]| **Start the release wrapper as native session** |
 
 ```bash
 MORPH_BIN="$PWD/build/morph" \
@@ -533,7 +535,7 @@ Expected:
 
 | Arch | Debian | Fedora | Bedrock | Description |
 |---|---|---|---|---|
-|[x]|[ ]|[ ]|[ ]| **Start native release session with X11 bridge disabled** |
+|[x]|[ ]|[x]|[ ]| **Start native release session with X11 bridge disabled** |
 
 ```bash
 MORPH_X11=0 MORPH_BIN="$PWD/build/morph" \
@@ -559,7 +561,8 @@ start44
 Expected:
 - `MORPH_X11` resolves to `0`.
 - Native Wayland startup still completes.
-- No xwayland-satellite process is started by the wrapper/compositor path.
+- No xwayland-satellite process is started by the wrapper/compositor path. Test this by running `xterm` within `alacritty`:
+  - Error message: No X11 display found.
 - Repeat with `testing/morph-session_dbg` only when checking dev-wrapper parity.
 
 References:
@@ -631,7 +634,7 @@ check5
 
 | Arch | Debian | Fedora | Bedrock | Description |
 |---|---|---|---|---|
-|[x]|[ ]|[ ]|[ ]| **Start the dev launcher inside an X11 or Wayland session** |
+|[x]|[ ]|[x]|[ ]| **Start the dev launcher inside an X11 or Wayland session** |
 
 ```bash
 ./testing/morph-session_dbg
@@ -650,7 +653,7 @@ Expected:
 
 | Arch | Debian | Fedora | Bedrock | Description |
 |---|---|---|---|---|
-|[x]|[ ]|[ ]|[ ]| **Start nested session with X11 bridge explicitly disabled** |
+|[x]|[ ]|[x]|[ ]| **Start nested session with X11 bridge explicitly disabled** |
 
 ```bash
 MORPH_X11=0 ./testing/morph-session_dbg
@@ -1077,7 +1080,7 @@ Terminal layout:
 
 | Arch | Debian | Fedora | Bedrock | Description |
 |---|---|---|---|---|
-|[x]|[ ]|[ ]|[ ]| **Start a running session first** |
+|[x]|[ ]|[x]|[ ]| **Start a running session first** |
 
 In Terminal A, repeat the temporary preparation from section 6.1.:
 
@@ -1138,7 +1141,7 @@ Expected:
 
 | Arch | Debian | Fedora | Bedrock | Description |
 |---|---|---|---|---|
-|[x]|[ ]|[ ]|[ ]| **Prepare the user reload hook in a second terminal** |
+|[x]|[ ]|[x]|[ ]| **Prepare the user reload hook in a second terminal** |
 
 In Terminal B, stay in the same repository checkout and import the `HOOK_ROOT`
 and `LOG_BASE` values printed by Terminal A. Example:
@@ -1171,7 +1174,7 @@ Expected:
 
 | Arch | Debian | Fedora | Bedrock | Description |
 |---|---|---|---|---|
-|[x]|[ ]|[ ]|[ ]| **Trigger reload from the second terminal** |
+|[x]|[ ]|[x]|[ ]| **Trigger reload from the second terminal** |
 
 Run this in Terminal B. The socket check confirms that the command can reach the
 running compositor before triggering reload:
@@ -1196,7 +1199,7 @@ Expected:
 - The log contains `Managed reload hook completed`.
 - The session keeps running after `./build/morph --reload-config`.
 
-- [x] **Test user reload hook with `reload <cmd ...>`**
+[x] **Test user reload hook with `reload <cmd ...>`**
 
 Inspect the same reload log after 7.3:
 
@@ -1276,7 +1279,7 @@ down through the managed cleanup path.
 
 | Arch | Debian | Fedora | Bedrock | Description |
 |---|---|---|---|---|
-|[x]|[ ]|[ ]|[ ]| **End the running chapter 7 session normally** |
+|[x]|[ ]|[x]|[ ]| **End the running chapter 7 session normally** |
 
 In the nested Morph session from chapter 7, press the configured quit binding:
 
@@ -1294,7 +1297,7 @@ Expected:
 
 | Arch | Debian | Fedora | Bedrock | Description |
 |---|---|---|---|---|
-|[x]|[ ]|[ ]|[ ]| **Inspect the managed shutdown log** |
+|[x]|[ ]|[x]|[ ]| **Inspect the managed shutdown log** |
 
 Run this in Terminal B after 8.1 has returned Terminal A to the shell:
 
@@ -1314,7 +1317,7 @@ Expected:
 
 | Arch | Debian | Fedora | Bedrock | Description |
 |---|---|---|---|---|
-|[x]|[ ]|[ ]|[ ]| **Check the shutdown tracker file** |
+|[x]|[ ]|[x]|[ ]| **Check the shutdown tracker file** |
 
 Run this in Terminal B:
 
@@ -1333,7 +1336,7 @@ Expected:
 
 | Arch | Debian | Fedora | Bedrock | Description |
 |---|---|---|---|---|
-|[x]|[ ]|[ ]|[ ]| **Simulate an abnormal stop if needed** |
+|[x]|[ ]|[x]|[ ]| **Simulate an abnormal stop if needed** |
 
 Use this only after the normal shutdown test has been completed. Start a fresh
 chapter 7 session first if you want to compare abnormal-stop behavior against the
@@ -1354,7 +1357,7 @@ Expected:
 
 | Arch | Debian | Fedora | Bedrock | Description |
 |---|---|---|---|---|
-|[x]|[ ]|[ ]|[ ]| **Remove the temporary hook test directory** |
+|[x]|[ ]|[x]|[ ]| **Remove the temporary hook test directory** |
 
 Run this in Terminal B after all chapter 8 checks are done:
 
@@ -1541,7 +1544,7 @@ Clarification:
 
 | Arch | Debian | Fedora | Bedrock | Description |
 |---|---|---|---|---|
-|[x]|[ ]|[ ]|[ ]| **Inspect Meson runtime install manifest** |
+|[x]|[ ]|[x]|[ ]| **Inspect Meson runtime install manifest** |
 
 With `jq` installed:
 
@@ -1573,7 +1576,7 @@ Expected:
 
 | Arch | Debian | Fedora | Bedrock | Description |
 |---|---|---|---|---|
-|[x]|[ ]|[ ]|[ ]| **Install runtime files with Meson** |
+|[x]|[ ]|[x]|[ ]| **Install runtime files with Meson** |
 
 The following command installs morph in the system:
 
@@ -1594,7 +1597,7 @@ Expected:
 
 | Arch | Debian | Fedora | Bedrock | Description |
 |---|---|---|---|---|
-|[x]|[ ]|[ ]|[ ]| **Preview dev install plan** |
+|[x]|[ ]|[x]|[ ]| **Preview dev install plan** |
 
 ```bash
 ./scripts/dev-install.sh install --dry --print-sudo-help
@@ -1626,7 +1629,7 @@ Expected:
 
 | Arch | Debian | Fedora | Bedrock | Description |
 |---|---|---|---|---|
-|[x]|[ ]|[ ]|[ ]| **Install display-manager-visible dev session links under `/usr`** |
+|[x]|[ ]|[x]|[ ]| **Install display-manager-visible dev session links under `/usr`** |
 
 Build the debug binary first if it does not exist yet:
 
@@ -1653,11 +1656,17 @@ Expected:
 - The dev session becomes visible to display managers that read `/usr/share/wayland-sessions`.
 - This does not install runtime `/etc/morph` files; it keeps using repository-local debug runtime paths.
 
+**General Note:**
+A login manager needs access to the session files. Therefore, you need to grant execute permissions to it (this allows traversing, but not listing files):
+```bash
+chmod o+x /home/<your_home>
+```
+
 ### 11.6. Test installed sessions
 
 | Arch | Debian | Fedora | Bedrock | Description |
 |---|---|---|---|---|
-|[x]|[ ]|[ ]|[ ]| **Test runtime and dev sessions through login manager and shell** |
+|[x]|[ ]|[x]|[ ]| **Test runtime and dev sessions through login manager and shell** |
 
 This check validates the installed entry points, not the repository-local wrapper
 commands from the earlier chapters. Run it after 11.2 for the runtime session and
@@ -1727,7 +1736,7 @@ checks Meson's manifest and leaves changed files untouched.
 
 | Arch | Debian | Fedora | Bedrock | Description |
 |---|---|---|---|---|
-|[x]|[ ]|[ ]|[ ]| **Inspect conservative runtime uninstall plan** |
+|[x]|[ ]|[x]|[ ]| **Inspect conservative runtime uninstall plan** |
 
 ```bash
 ./scripts/system-uninstall.sh --builddir build
@@ -1742,7 +1751,7 @@ Expected:
 
 | Arch | Debian | Fedora | Bedrock | Description |
 |---|---|---|---|---|
-|[x]|[ ]|[ ]|[ ]| **Remove unchanged runtime install artifacts** |
+|[x]|[ ]|[x]|[ ]| **Remove unchanged runtime install artifacts** |
 
 ```bash
 sudo ./scripts/system-uninstall.sh --builddir build --remove
@@ -1757,7 +1766,7 @@ Expected:
 
 | Arch | Debian | Fedora | Bedrock | Description |
 |---|---|---|---|---|
-|[x]|[ ]|[ ]|[ ]| **Check Meson-generated uninstall target** |
+|[x]|[ ]|[x]|[ ]| **Check Meson-generated uninstall target** |
 
 The Meson command set commonly does not provide a `meson uninstall` command,
 but the generated Ninja build has an `uninstall` target. Check the local Meson
@@ -1779,7 +1788,7 @@ Expected:
 
 | Arch | Debian | Fedora | Bedrock | Description |
 |---|---|---|---|---|
-|[x]|[ ]|[ ]|[ ]| **Remove dev user links** |
+|[x]|[ ]|[x]|[ ]| **Remove dev user links** |
 
 ```bash
 ./scripts/dev-install.sh uninstall --link-launcher
@@ -1794,7 +1803,7 @@ Expected:
 
 | Arch | Debian | Fedora | Bedrock | Description |
 |---|---|---|---|---|
-|[x]|[ ]|[ ]|[ ]| **Remove `/usr` dev session links** |
+|[x]|[ ]|[x]|[ ]| **Remove `/usr` dev session links** |
 
 ```bash
 ./scripts/dev-install.sh uninstall --system-links
@@ -1822,7 +1831,7 @@ Meson/dev-install flows above without hiding what they do.
 
 | Arch | Debian | Fedora | Bedrock | Description |
 |---|---|---|---|---|
-|[x]|[ ]|[ ]|[ ]| **Build runtime and debug variants through the helper** |
+|[x]|[ ]|[x]|[ ]| **Build runtime and debug variants through the helper** |
 
 ```bash
 ./scripts/morph-build.sh --runtime
@@ -1838,7 +1847,7 @@ Expected:
 
 | Arch | Debian | Fedora | Bedrock | Description |
 |---|---|---|---|---|
-|[x]|[ ]|[ ]|[ ]| **Preview unified runtime/debug install helper** |
+|[x]|[ ]|[x]|[ ]| **Preview unified runtime/debug install helper** |
 
 ```bash
 ./scripts/morph-install.sh --runtime --dry
@@ -1848,9 +1857,27 @@ Expected:
 
 Expected:
 - `--runtime --dry` prints the Meson runtime install command and manifest-derived targets without installing files.
-- `--debug --dry` prints debug-session symlink targets without creating them.
+- `--debug --dry` prints the delegated dev install plan, including `~/.config/morph/*`, `~/.local/bin/morph-session_dbg`, and the system-visible debug session links, without creating them.
 - `--both --dry` prints runtime first and debug second.
 - The dry-run output stays consistent with chapters 11.1 and 11.3.
+
+### 13.3. Uninstall
+
+| Arch | Debian | Fedora | Bedrock | Description |
+|---|---|---|---|---|
+|[x]|[ ]|[x]|[ ]| **Preview unified runtime/debug uninstall helper** |
+
+```bash
+./scripts/morph-uninstall.sh --runtime --dry
+./scripts/morph-uninstall.sh --debug --dry
+./scripts/morph-uninstall.sh --both --dry
+```
+
+Expected:
+- `--runtime --dry` prints the conservative runtime uninstall command without removing files.
+- `--debug --dry` prints the delegated dev uninstall plan, including matching `~/.config/morph/*` links, `~/.local/bin/morph-session_dbg`, and the system-visible debug session links, without removing them.
+- `--both --dry` prints runtime first and debug second.
+- The debug uninstall path removes only symlinks that still point back to this checkout, removes an empty `~/.config/morph` directory after those links are gone, and leaves unrelated user files untouched.
 
 References:
 - `scripts/morph-build.sh`

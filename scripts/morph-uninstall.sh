@@ -18,13 +18,18 @@ Options:
   --dry       Print commands only (no changes)
 
 Debug uninstall targets:
+  - ~/.config/morph/* symlinks when they still point at testing/config/*
+  - ~/.local/bin/morph-session_dbg when it still points at ./testing/morph-session_dbg
   - /usr/bin/morph_dbg
   - /usr/bin/morph-session_dbg
   - /usr/share/wayland-sessions/morph_dbg.desktop
+  - /usr/share/icons/hicolor/scalable/apps/morph_dbg.svg
 
 Notes:
   - Runtime uninstall keeps the same conservative file verification behavior as
     scripts/system-uninstall.sh.
+  - Debug uninstall delegates to scripts/dev-install.sh so it mirrors the debug
+    install flow and leaves unrelated user files untouched.
 EOF
 }
 
@@ -68,14 +73,47 @@ run_root() {
     fi
 }
 
-remove_if_exists() {
-    target="$1"
+require_dev_install_helper() {
+    if [ ! -x "scripts/dev-install.sh" ]; then
+        printf 'Missing dev install helper: ./scripts/dev-install.sh\n' >&2
+        exit 1
+    fi
+}
 
-    # Treat symlinks explicitly so broken links can still be removed.
-    if [ -e "$target" ] || [ -L "$target" ]; then
-        run_root rm -f "$target"
+run_as_invoking_user() {
+    if [ "$(id -u)" -ne 0 ] || [ -z "${SUDO_USER:-}" ] || [ "${SUDO_USER:-}" = root ]; then
+        "$@"
+        return $?
+    fi
+
+    user_home=$(getent passwd "$SUDO_USER" | cut -d: -f6)
+    if [ -z "$user_home" ]; then
+        printf 'Unable to resolve home directory for sudo user: %s\n' "$SUDO_USER" >&2
+        exit 1
+    fi
+
+    # User-local dev links must be removed from the invoking user's home even
+    # when the combined uninstall helper itself was started with sudo.
+    sudo -u "$SUDO_USER" env HOME="$user_home" XDG_CONFIG_HOME="$user_home/.config" "$@"
+}
+
+run_dev_uninstall_user_links() {
+    require_dev_install_helper
+
+    if [ "$DRY" -eq 1 ]; then
+        run_as_invoking_user ./scripts/dev-install.sh uninstall --link-launcher --dry
     else
-        printf '[morph-uninstall] skip missing: %s\n' "$target"
+        run_as_invoking_user ./scripts/dev-install.sh uninstall --link-launcher
+    fi
+}
+
+run_dev_uninstall_system_links() {
+    require_dev_install_helper
+
+    if [ "$DRY" -eq 1 ]; then
+        ./scripts/dev-install.sh uninstall --system-links --skip-user-links --dry
+    else
+        ./scripts/dev-install.sh uninstall --system-links --skip-user-links
     fi
 }
 
@@ -96,10 +134,8 @@ uninstall_runtime() {
 
 uninstall_debug() {
     printf '[morph-uninstall] debug phase\n'
-
-    remove_if_exists /usr/bin/morph_dbg
-    remove_if_exists /usr/bin/morph-session_dbg
-    remove_if_exists /usr/share/wayland-sessions/morph_dbg.desktop
+    run_dev_uninstall_user_links
+    run_dev_uninstall_system_links
 }
 
 case "$MODE" in
