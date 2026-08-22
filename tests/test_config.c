@@ -308,6 +308,30 @@ static int test_missing_config_can_use_builtin_fallback(void)
     return 0;
 }
 
+/** Missing default config path must use the same explicit fallback as a missing file path. */
+static int test_unresolved_config_path_can_use_builtin_fallback(void)
+{
+    struct comp_config *cfg = NULL;
+    setenv("MORPH_ALLOW_BUILTIN_FALLBACK", "1", 1);
+    bool ok = comp_config_load(NULL, &cfg);
+    unsetenv("MORPH_ALLOW_BUILTIN_FALLBACK");
+    if (!ok || !cfg || cfg->n_binds != 4 ||
+        cfg->binds[0].mods != WLR_MODIFIER_LOGO || cfg->binds[0].keysym != XKB_KEY_Return ||
+        cfg->binds[0].action != COMP_KEYBIND_EXEC || strcmp(cfg->binds[0].command, "${TERMINAL:-foot}") != 0 ||
+        cfg->binds[1].mods != (WLR_MODIFIER_LOGO | WLR_MODIFIER_SHIFT) || cfg->binds[1].keysym != XKB_KEY_Q ||
+        cfg->binds[1].action != COMP_KEYBIND_CLOSE || cfg->binds[2].mods != WLR_MODIFIER_LOGO ||
+        cfg->binds[2].keysym != XKB_KEY_Escape || cfg->binds[2].action != COMP_KEYBIND_QUIT ||
+        cfg->binds[3].mods != WLR_MODIFIER_LOGO || cfg->binds[3].keysym != XKB_KEY_t ||
+        cfg->binds[3].action != COMP_KEYBIND_LAYOUT_TOGGLE)
+    {
+        fprintf(stderr, "unresolved config path should use all builtin default binds when enabled\n");
+        comp_config_free(cfg);
+        return 1;
+    }
+    comp_config_free(cfg);
+    return 0;
+}
+
 /** Execute all config parser regression tests; return non-zero on first failure. */
 int main(void)
 {
@@ -324,6 +348,10 @@ int main(void)
         return 1;
     }
     if (test_missing_config_can_use_builtin_fallback() != 0)
+    {
+        return 1;
+    }
+    if (test_unresolved_config_path_can_use_builtin_fallback() != 0)
     {
         return 1;
     }

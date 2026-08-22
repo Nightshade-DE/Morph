@@ -4500,12 +4500,19 @@ static bool server_reload_config(struct comp_server *server)
 	char fallback[PATH_MAX];
 	if (!path || !path[0])
 	{
-		if (!comp_config_default_path(fallback, sizeof(fallback)))
+		if (comp_config_default_path(fallback, sizeof(fallback)))
+		{
+			path = fallback;
+		}
+		else if (!comp_config_builtin_fallback_enabled())
 		{
 			wlr_log(WLR_ERROR, "reload: no config path and no default config file");
 			return false;
 		}
-		path = fallback;
+		else
+		{
+			wlr_log(WLR_INFO, "reload: no config file resolved; using built-in defaults");
+		}
 	}
 	struct comp_config *new_cfg = NULL;
 	if (!comp_config_load(path, &new_cfg))
@@ -4524,7 +4531,7 @@ static bool server_reload_config(struct comp_server *server)
 	comp_config_sync_shell_env(server);
 	comp_config_run_reload(server->config);
 	server_apply_input_device_maps(server);
-	wlr_log(WLR_INFO, "reload: loaded config from %s", path);
+	wlr_log(WLR_INFO, "reload: loaded config from %s", path && path[0] ? path : "<built-in defaults>");
 	return true;
 }
 
@@ -7090,12 +7097,21 @@ int main(int argc, char **argv)
 	}
 	if (!cfg_path)
 	{
-		if (!comp_config_default_path(cfg_buf, sizeof(cfg_buf)))
+		if (comp_config_default_path(cfg_buf, sizeof(cfg_buf)))
+		{
+			cfg_path = cfg_buf;
+		}
+		else if (!comp_config_builtin_fallback_enabled())
 		{
 			wlr_log(WLR_ERROR, "No readable config found in user or system locations");
 			return 1;
 		}
-		cfg_path = cfg_buf;
+		else
+		{
+			/* Let comp_config_load(NULL, ...) synthesize the documented built-in
+			 * defaults instead of rejecting the no-config startup earlier. */
+			wlr_log(WLR_INFO, "No config file resolved; using built-in defaults");
+		}
 	}
 
 	struct comp_config *cfg = NULL;

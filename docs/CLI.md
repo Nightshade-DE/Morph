@@ -34,7 +34,7 @@ Other flags are IPC-aware and may send an action to an already running composito
 |---|---|---|
 | `-h`, `--help` | Show help and exit | Printed by [`src/main.c:4319`](../src/main.c#L4319) |
 | `-c PATH`, `--config PATH` | Load config from `PATH` | Highest config priority; also documented in [`docs/CONFIG.md`](CONFIG.md) |
-| `--allow-builtin-fallback` | Allow built-in default binds if no config file resolves | Mirrors [`MORPH_ALLOW_BUILTIN_FALLBACK=1`](ENVIRONMENT.md#morph-allow-builtin-fallback) |
+| `--allow-builtin-fallback` | Start without a config file using the four built-in emergency bindings | Mirrors [`MORPH_ALLOW_BUILTIN_FALLBACK=1`](ENVIRONMENT.md#morph-allow-builtin-fallback) |
 | `--ipc` | Keep compatibility; IPC is already default-on when `XDG_RUNTIME_DIR` exists | Mostly useful for older scripts |
 | `--no-ipc` | Disable the IPC socket for this instance | Prevents local socket creation |
 

@@ -11,7 +11,7 @@ This file documents the **INI-style** configuration read at compositor startup. 
    - `~/.config/morph/morph.conf`
    - `/etc/morph/morph.conf`
 
-If no file is found, startup stops with a log message instead of silently continuing without a config. You can opt into the built-in fallback behavior with **`--allow-builtin-fallback`** or **[`MORPH_ALLOW_BUILTIN_FALLBACK=1`](ENVIRONMENT.md#morph-allow-builtin-fallback)**. If the file exists but defines **no** `[bind]` entries, **built-in binds** are still generated as a compatibility fallback.
+If no file is found, startup stops with a log message instead of silently continuing without a config. You can opt into the built-in fallback behavior with **`--allow-builtin-fallback`** or **[`MORPH_ALLOW_BUILTIN_FALLBACK=1`](ENVIRONMENT.md#morph-allow-builtin-fallback)**. The fallback provides only four emergency bindings: terminal (`Super+Return`), close (`Super+Shift+Q`), quit (`Super+Escape`), and layout toggle (`Super+T`). It does not synthesize hooks, application rules, portal setup, input mappings, workspace bindings, or startup applications. If the file exists but defines **no** `[bind]` entries, the same built-in binds are still generated as a compatibility fallback.
 
 A starting point for your own file is **[`morph.conf.example`](morph.conf.example)** in this repository.
 

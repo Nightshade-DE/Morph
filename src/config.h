@@ -114,6 +114,9 @@ struct comp_config {
 
 bool comp_config_default_path(char *out, size_t out_len);
 
+/** Return whether the caller explicitly enabled synthesized config defaults. */
+bool comp_config_builtin_fallback_enabled(void);
+
 bool comp_config_load(const char *path, struct comp_config **cfg_out);
 
 void comp_config_free(struct comp_config *cfg);

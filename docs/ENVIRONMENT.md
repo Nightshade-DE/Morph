@@ -57,7 +57,21 @@ Optional alternate config file path passed through `-c` or the environment varia
 Optional compatibility switch for config resolution.
 
 - unset or `0`: missing config is a hard error
-- `1` / `true` / `yes` / `on`: allow built-in default binds when no config file resolves
+- `1` / `true` / `yes` / `on`: allow Morph to start without a config file and use the built-in defaults
+
+The synthesized configuration currently contains only these emergency bindings:
+
+- `Super+Return`: execute `${TERMINAL:-foot}`
+- `Super+Shift+Q`: close the focused window
+- `Super+Escape`: quit Morph
+- `Super+T`: toggle between stack and tile layout; scroll switches back to stack
+
+The fallback does not create hooks, portal configuration, tile or decoration
+rules, input mappings, workspace bindings, or startup applications. Other
+configuration defaults, such as stack layout, enabled layout animation,
+server-side decoration policy, and SSD settings, are initialized independently
+by the config loader and are also used for regular config files when those
+sections are omitted.
 
 This mirrors the binary CLI flag `--allow-builtin-fallback`.
 

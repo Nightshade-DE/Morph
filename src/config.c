@@ -331,7 +331,7 @@ static void load_defaults(struct comp_config *cfg) {
 }
 
 /** Return true when builtin config fallback was explicitly enabled. */
-static bool builtin_config_fallback_enabled(void) {
+bool comp_config_builtin_fallback_enabled(void) {
 	const char *value = getenv("MORPH_ALLOW_BUILTIN_FALLBACK");
 	if (!value || !value[0]) {
 		return false;
@@ -1164,7 +1164,7 @@ bool comp_config_load(const char *path, struct comp_config **cfg_out) {
 		} else {
 			wlr_log(WLR_ERROR, "No config path resolved");
 		}
-		if (builtin_config_fallback_enabled()) {
+		if (comp_config_builtin_fallback_enabled()) {
 			/* This opt-in exists for recovery and development cases where a
 			 * session should still come up even though no config file resolved. */
 			wlr_log(WLR_INFO, "Builtin config fallback enabled; using synthesized defaults");

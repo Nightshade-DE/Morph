@@ -362,6 +362,107 @@ Expected:
 
 **Note:** Ensure that in config/environment `MORPH_ALLOW_BUILTIN_FALLBACK=1` commented out or set to 0! 
 
+#### 3.1.1. Start a real session with built-in configuration
+
+| Arch | Debian | Fedora | Description |
+|---|---|---|---|
+|[x]|[x]|[x]| **Start the compositor without any readable config file** |
+
+This is the actual runtime check for the fallback. It must not use
+`MORPH_RESOLVE_ONLY=1`; that mode validates only wrapper resolution and skips
+the compositor binary.
+
+Run this from a real TTY or another environment where a native Morph session
+can be started. The check assumes that no installed `/etc/morph/morph.conf`
+exists. Do not move or delete an installed system config just for this test.
+
+Prepare an isolated home and config environment:
+
+```bash
+if [ -r /etc/morph/morph.conf ]; then
+   printf '%s\n' 'Skip: /etc/morph/morph.conf exists; the system config fallback is still available.'
+   printf '%s\n' 'Do not continue with this no-config test on this system.'
+else
+   FALLBACK_ROOT=$(mktemp -d /tmp/morph-builtin-session.XXXXXX)
+   mkdir -p "$FALLBACK_ROOT/home" "$FALLBACK_ROOT/config" "$FALLBACK_ROOT/state"
+fi
+
+```
+
+Function for ~/.bashrc:
+
+```bash
+thook311() {
+	export FALLBACK_ROOT
+	if [ -r /etc/morph/morph.conf ]; then
+	   printf '%s\n' 'Skip: /etc/morph/morph.conf exists; the system config fallback is still available.'
+	   printf '%s\n' 'Do not continue with this no-config test on this system.'
+	else
+	   FALLBACK_ROOT=$(mktemp -d /tmp/morph-builtin-session.XXXXXX)
+	   mkdir -p "$FALLBACK_ROOT/home" "$FALLBACK_ROOT/config" "$FALLBACK_ROOT/state"
+	fi
+}
+```
+
+Start the release wrapper with all config candidates unavailable:
+
+```bash
+HOME="$FALLBACK_ROOT/home" \
+XDG_CONFIG_HOME="$FALLBACK_ROOT/config" \
+XDG_STATE_HOME="$FALLBACK_ROOT/state" \
+MORPH_ALLOW_BUILTIN_FALLBACK=1 \
+MORPH_X11=0 \
+MORPH_BIN="$PWD/build/morph" \
+MORPH_SYSTEM_HOOK_DIR="$PWD/scripts" \
+MORPH_SYSTEM_CONFIG_DIR="$PWD/config" \
+MORPH_SYSTEM_CONFIG_FILE="$FALLBACK_ROOT/missing-morph.conf" \
+sh ./scripts/morph-session
+```
+
+Alias for ~/.bashrc:
+
+```bash
+alias start311='HOME="$FALLBACK_ROOT/home" \
+XDG_CONFIG_HOME="$FALLBACK_ROOT/config" \
+XDG_STATE_HOME="$FALLBACK_ROOT/state" \
+MORPH_ALLOW_BUILTIN_FALLBACK=1 \
+MORPH_X11=0 \
+MORPH_BIN="$PWD/build/morph" \
+MORPH_SYSTEM_HOOK_DIR="$PWD/scripts" \
+MORPH_SYSTEM_CONFIG_DIR="$PWD/config" \
+MORPH_SYSTEM_CONFIG_FILE="$FALLBACK_ROOT/missing-morph.conf" \
+sh ./scripts/morph-session'
+```
+
+While the session is running, press the built-in quit binding:
+
+```text
+Super+Escape
+```
+
+Clean up after the session exits:
+
+```bash
+rg -n 'Config file path|Builtin fallback enabled|No config file resolved|Builtin config fallback enabled|Compositor exited normally' \
+   "$FALLBACK_ROOT/state/morph"/morph*.log
+rm -rf "$FALLBACK_ROOT"
+```
+
+Check alias for ~/.bashrc:
+
+```bash
+alias check311='rg -n "Config file path|Builtin fallback enabled|No config file resolved|Builtin config fallback enabled|Compositor exited normally" "$FALLBACK_ROOT/state/morph"/morph*.log'
+```
+
+Expected:
+
+- Morph starts successfully without `MORPH_RESOLVE_ONLY=1`.
+- The wrapper summary reports `builtin fallback (no readable config file)`.
+- The compositor log contains `Builtin config fallback enabled; using synthesized defaults`.
+- `Super+Escape` terminates the session, proving that the built-in quit binding was loaded.
+- The wrapper exits normally and does not report `No readable config found` or a config-load failure.
+- Repeat the same check with `testing/morph-session_dbg` and `build_dbg/morph` for debug-wrapper parity.
+
 ### 3.2. Default debug-wrapper config resolution
 
 [x] **Default debug-wrapper config resolution**
