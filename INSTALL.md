@@ -9,25 +9,64 @@ and uninstall flows for both runtime and development setups.
 
 Morph currently builds against the following primary dependencies:
 
-| Arch | Debian | Fedora | Bedrock | >= version |
-|---|---|---|---|---|
-| | | gcc-c++ | | 16 |
-| cmake | cmake | cmake | cmake | 3.20 |
-| meson | meson | meson | meson | 1.11 |
-| | | pkgconf-pkg-config | | 2.5 |
-| | | wlroots-devel | | 0.19 |
-| | | libwayland-server | | 1.25 |
-| | | xwayland-satellite | | 0.8 |
-| | | wayland-protocols-devel | | 1.49 |
-| | | wlr-protocols-devel | | |
-| | | xdg-desktop-portal-wlr | | 0.84 |
-| | | xdg-desktop-portal-gtk | | 1.15 |
-| | wayland-scanner | N/A | | |
-| | | libxkbcommon | | 1.13 |
-| | pixman-1 | | 0.44 |
-
+| Arch | Debian | Fedora | >= version |
+|---|---|---|---|
+| base-devel | g++ | gcc-c++ | 16 |
+| cmake | cmake | cmake | 3.20 |
+| meson | meson | meson | 1.11 |
+| pkgconf | pkg-config | pkgconf-pkg-config | 2.5 |
+| wlroots0.19 | libwlroots-0.19-dev | wlroots-devel | 0.19 |
+| lib32-wayland | libwayland-server0³ | libwayland-server³ | 1.25 |
+| xwayland-satellite | not available¹ | xwayland-satellite | 0.8 |
+| wayland-protocols | wayland-protocols | wayland-protocols-devel | 1.49 |
+| wlr-protocols | not available² | wlr-protocols-devel | |
+| xdg-desktop-portal-wlr | xdg-desktop-portal-wlr | xdg-desktop-portal-wlr | 0.84 |
+| xdg-desktop-portal-gtk | xdg-desktop-portal-gtk | xdg-desktop-portal-gtk | 1.15 |
+| wayland| wayland-scanner³ | wayland-scanner³ | 1.25 |
+| libxkbcommon | libxkbcommon-dev | libxkbcommon | 1.13 |
+| pixman | pixman-1-dev | pixman-1-dev | 0.44 |
 
 - POSIX shell `sh`
+
+¹ `xwayland-satellite` has no official package in Debian repositories. To use it on Debian, install Rust and Cargo, then compile it manually using Cargo.
+
+Install build tools and XCB libraries via apt:
+```bash
+sudo apt install -y cargo rustc libxcb1-dev libxcb-composite0-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libclang-dev
+```
+
+Ensure xwayland is installed on your system:
+```bash
+sudo apt install xwayland
+```
+
+Clone repository and build:
+```bash
+git clone https://github.com/Supreeeme/xwayland-satellite.git
+cd xwayland-satellite
+cargo build --release
+```
+
+Make available system-wide:
+```bash
+sudo cp target/release/xwayland-satellite /usr/local/bin/
+```
+
+² `wlr-protocols` has no official package in Debian repositories. To use it on Debian, it has to be build from source.
+
+clone the repository:
+```bash
+git clone https://gitlab.freedesktop.org/wlroots/wlr-protocols.git
+cd wlr-protocols
+```
+
+Build and install them system-wide:
+```bash
+make
+sudo make install
+```
+
+³ `wayland-scanner` and `libwayland-server` is in Debian and Fedora included in `libwayland-dev`.
 
 Version note:
 

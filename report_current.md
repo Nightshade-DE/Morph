@@ -6,10 +6,9 @@ Last checked against branch tip `45e700e` plus the local test fixes for release/
 
 The following Linux distributions will be tested in this report:
 
-- Arch (CachyOS)
-- Debian unstable (Siduction)
-- Fedora
-- Bedrock
+- Arch (CachyOS Xfce)
+- Debian unstable (Siduction Xfce)
+- Fedora 44 Xfce
 
 **Note:** The tests don't need any installed version of Morph. All will run **inside** the repository.
 
@@ -42,33 +41,39 @@ The following Linux distributions will be tested in this report:
 
 ## 0. Automated Baseline Run
 
-| Arch | Debian | Fedora | Bedrock | Description |
-|---|---|---|---|---|
-|[x]|[ ]|[x]|[ ]| **First build: `(rm -rf build/;) meson setup build`**|
-|[x]|[ ]|[x]|[ ]| **Follow-up builds: `meson setup build --reconfigure`** |
-|[x]|[ ]|[x]|[ ]| **`meson test -C build --print-errorlogs`** |
+| Arch | Debian | Fedora | Description |
+|---|---|---|---|
+|[x]|[x]|[x]| **First build: `(rm -rf build/;) meson setup build`**|
+|[x]|[x]|[x]| **Follow-up builds: `meson setup build --reconfigure`** |
+|[x]|[x]|[x]| **`meson test -C build --print-errorlogs`** |
 
 Expected:
+
 - Build configures and compiles `morph`
 - `config` and `shell-runtime` tests pass
 
 References:
+
 - `meson.build`
 - `tests/test_shell_runtime.sh`
 - `docs/TESTS.md`
 
 ## 1. README and Doc Entry Points
 
-- [x] **Open [`README.md`](README.md) and check whether the entry links make sense**
-- [x] **Open [`docs/OVERVIEW.md`](docs/OVERVIEW.md) and check whether repo structure + flows read as a coherent path**
-- [x] **Reach `docs/LAUNCHER.md`, [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md), and [`docs/CLI.md`](docs/CLI.md) through the links in [`README.md`](README.md)**
+[x] **Open [`README.md`](README.md) and check whether the entry links make sense**
+
+[x] **Open [`docs/OVERVIEW.md`](docs/OVERVIEW.md) and check whether repo structure + flows read as a coherent path**
+
+[x] **Reach `docs/LAUNCHER.md`, [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md), and [`docs/CLI.md`](docs/CLI.md) through the links in [`README.md`](README.md)**
 
 Expected:
+
 - [`README.md`](README.md) stays compact and does not overwhelm the reader
 - [`docs/OVERVIEW.md`](docs/OVERVIEW.md) explains structure and flow entry points clearly
 - Cross-references between launcher, environment, flow, and CLI docs work
 
 References:
+
 - [`README.md`](README.md)
 - [`docs/OVERVIEW.md`](docs/OVERVIEW.md)
 - [`docs/LAUNCHER.md`](docs/LAUNCHER.md)
@@ -100,9 +105,9 @@ rm ~/.local/state/morph/*
 
 ### 2.1. Default release-wrapper resolution
 
-| Arch | Debian | Fedora | Bedrock | Description |
-|---|---|---|---|---|
-|[x]|[ ]|[x]|[ ]| **Default release-wrapper resolution** |
+| Arch | Debian | Fedora | Description |
+|---|---|---|---|
+|[x]|[x]|[x]| **Default release-wrapper resolution** |
 
 ```bash
 MORPH_RESOLVE_ONLY=1 MORPH_BIN="$PWD/build/morph" \
@@ -113,6 +118,7 @@ MORPH_RESOLVE_ONLY=1 MORPH_BIN="$PWD/build/morph" \
 ```
 
 Expected:
+
 - `Runtime summary:` is present.
 - `Environment source` shows either a loaded environment file or the defaults-only note.
 - `Compositor binary` ends in `/build/morph`.
@@ -123,15 +129,16 @@ Expected:
 
 ### 2.2. Debug-wrapper resolution
 
-| Arch | Debian | Fedora | Bedrock | Description |
-|---|---|---|---|---|
-|[x]|[ ]|[x]|[ ]| **Debug-wrapper resolution** |
+| Arch | Debian | Fedora | Description |
+|---|---|---|---|
+|[x]|[x]|[x]| **Debug-wrapper resolution** |
 
 ```bash
 MORPH_RESOLVE_ONLY=1 ./testing/morph-session_dbg
 ```
 
 Expected:
+
 - `Debug summary:` is present.
 - `Compositor binary` ends in `/build_dbg/morph`.
 - `Managed system hook directory` points at the repository `scripts/` directory.
@@ -141,7 +148,7 @@ Expected:
 
 ### 2.3. Caller environment wins over environment files
 
-- [x] **Caller environment wins over environment files**
+[x] **Caller environment wins over environment files**
 
 ```bash
 MORPH_DBG=2 MORPH_RESOLVE_ONLY=1 MORPH_BIN="$PWD/build/morph" \
@@ -152,6 +159,7 @@ MORPH_DBG=2 MORPH_RESOLVE_ONLY=1 MORPH_BIN="$PWD/build/morph" \
 ```
 
 Expected:
+
 - `MORPH_DBG` resolves to `2`.
 - `MORPH_LOG_LEVEL` resolves to `debug`.
 - `Crash handler enabled` resolves to `1`.
@@ -172,6 +180,7 @@ MORPH_ENV_FILE=/path/to/test-environment MORPH_RESOLVE_ONLY=1 \
 ```
 
 Expected:
+
 - `Environment source` names `/path/to/test-environment`.
 - Values from that file appear unless overridden by caller variables.
 - If a user environment file also exists, `Environment source` mentions both files in priority order.
@@ -192,6 +201,7 @@ MORPH_DBG=1 MORPH_DEBUG_XDG=1 MORPH_DEBUG_XDG_COMMITS=1 \
 ```
 
 Expected:
+
 - `Verbose environment details:` is present because `MORPH_DBG=1` enables the diagnostic block.
 - `MORPH_DEBUG_XDG` resolves to `1`.
 - `MORPH_DEBUG_XDG_COMMITS` resolves to `1`.
@@ -215,6 +225,7 @@ LD_LIBRARY_PATH=/tmp/morph-ld-test MORPH_RESOLVE_ONLY=1 \
 ```
 
 Expected:
+
 - The wrapper reaches resolve-only mode cleanly.
 - `LD_LIBRARY_PATH` in `Runtime summary:` is exactly `/tmp/morph-ld-test`.
 - This confirms that the caller-provided value survived environment-file loading and wrapper resolution.
@@ -222,6 +233,7 @@ Expected:
 - `Compositor binary` still points at `/build/morph`.
 
 References:
+
 - [`config/environment`](config/environment)
 - [`testing/config/environment`](testing/config/environment)
 - [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md)
@@ -254,15 +266,15 @@ rm ~/.local/state/morph/*
 
 ### 3.1. Default release-wrapper config resolution
 
-| Arch | Debian | Fedora | Bedrock | Description |
-|---|---|---|---|---|
-|[x]|[ ]|[x]|[ ]| **Default release-wrapper config resolution** |
+| Arch | Debian | Fedora | Description |
+|---|---|---|---|
+|[x]|[x]|[x]| **Default release-wrapper config resolution** |
 
 Prepare the user config state before this check. The system fallback is only
 visible when no readable user config exists at
 `${XDG_CONFIG_HOME:-$HOME/.config}/morph/morph.conf`.
 
-- [x] **No user config exists - system-fallback**
+[x] **No user config exists - system-fallback**
 
 If `~/.config/morph/morph.conf` exists, temporarily move the directory away:
 
@@ -279,6 +291,7 @@ MORPH_RESOLVE_ONLY=1 MORPH_BIN="$PWD/build/morph" \
 ```
 
 Expected:
+
 - Without a readable user config, `Config file path` points at `config/morph.conf`.
 - Without a readable user config, the reason is `system config fallback`.
 - The run ends with `Resolve-only mode requested; skipping compositor start after priority checks.`
@@ -307,11 +320,12 @@ MORPH_RESOLVE_ONLY=1 MORPH_BIN="$PWD/build/morph" \
 ```
 
 Expected:
+
 - With a readable user config restored or created, `Config file path` points at the user config.
 - With a readable user config restored or created, the reason is `user config fallback`.
 - The run ends with `Resolve-only mode requested; skipping compositor start after priority checks.`
 
-- [x] **Builtin fallback is opt-in only**
+[x] **Builtin fallback is opt-in only**
 
 Without any found config and no builtin fallback enabled Morph start will fail hard:
 
@@ -338,6 +352,7 @@ XDG_CONFIG_HOME=/tmp/morph-empty-config \
 ```
 
 Expected:
+
 - Missing config is a hard error without `MORPH_ALLOW_BUILTIN_FALLBACK=1`.
 - `User config directory` points at `/tmp/morph-empty-config/morph`.
 - `Builtin fallback enabled` resolves to `1`.
@@ -349,20 +364,21 @@ Expected:
 
 ### 3.2. Default debug-wrapper config resolution
 
-- [x] **Default debug-wrapper config resolution**
+[x] **Default debug-wrapper config resolution**
 
 ```bash
 MORPH_RESOLVE_ONLY=1 ./testing/morph-session_dbg
 ```
 
 Expected:
+
 - `Config file path` points at `testing/config/morph.conf`.
 - The reason is `system config fallback` unless a user config exists.
 - The run ends with `Resolve-only mode requested; skipping compositor start after priority checks.`
 
 ### 3.3. Explicit config override wins in both wrappers
 
-- [x] **Explicit config override wins in both wrappers**
+[x] **Explicit config override wins in both wrappers**
 
 ```bash
 MORPH_CONFIG=/path/to/other.conf MORPH_RESOLVE_ONLY=1 \
@@ -374,6 +390,7 @@ MORPH_CONFIG=/path/to/other.conf MORPH_RESOLVE_ONLY=1 \
 ```
 
 Expected:
+
 - `MORPH_CONFIG` beats user and system fallback.
 - `Config file path` points at `/path/to/other.conf`.
 - The reason is `override from MORPH_CONFIG`.
@@ -382,7 +399,7 @@ Expected:
 
 ### 3.5. User XDG config beats system config
 
-- [x] **User XDG config beats system config**
+[x] **User XDG config beats system config**
 
 ```bash
 XDG_CONFIG_HOME=/tmp/morph-xdg-test MORPH_RESOLVE_ONLY=1 \
@@ -394,6 +411,7 @@ XDG_CONFIG_HOME=/tmp/morph-xdg-test MORPH_RESOLVE_ONLY=1 \
 ```
 
 Expected:
+
 - `User config directory` points at `/tmp/morph-xdg-test/morph`.
 - User config is selected when `/tmp/morph-xdg-test/morph/morph.conf` exists.
 - User fallback follows `${XDG_CONFIG_HOME:-$HOME/.config}/morph/morph.conf`.
@@ -402,6 +420,7 @@ Expected:
 - Repeat with `testing/morph-session_dbg` when checking dev-wrapper parity.
 
 References:
+
 - `config/morph.conf`
 - `testing/config/morph.conf`
 - [`docs/CONFIG.md`](docs/CONFIG.md)
@@ -454,9 +473,9 @@ rm ~/.local/state/morph/*
 
 ### 4.1. Start the release wrapper as native session
 
-| Arch | Debian | Fedora | Bedrock | Description |
-|---|---|---|---|---|
-|[x]|[ ]|[x]|[ ]| **Start the release wrapper as native session** |
+| Arch | Debian | Fedora | Description |
+|---|---|---|---|
+|[x]|[x]|[x]| **Start the release wrapper as native session** |
 
 ```bash
 MORPH_BIN="$PWD/build/morph" \
@@ -480,6 +499,7 @@ start41
 ```
 
 Expected:
+
 - `Runtime summary:` is present.
 - `Selected session mode` is `native` or `native-tty`.
 - `Compositor binary` points at `build/morph`.
@@ -488,13 +508,14 @@ Expected:
 
 ### 4.2. Start the dev wrapper as native parity check
 
-- [x] **Start the dev wrapper as native parity check**
+[x] **Start the dev wrapper as native parity check**
 
 ```bash
 ./testing/morph-session_dbg
 ```
 
 Expected:
+
 - `Debug summary:` is present.
 - `Selected session mode` is `native` or `native-tty`.
 - `Compositor binary` points at `build_dbg/morph`.
@@ -502,7 +523,7 @@ Expected:
 
 ### 4.3. Start native release session with debug logging
 
-- [x] **Start native release session with debug logging**
+[x] **Start native release session with debug logging**
 
 ```bash
 MORPH_DBG=2 MORPH_BIN="$PWD/build/morph" \
@@ -526,6 +547,7 @@ start43
 ```
 
 Expected:
+
 - `MORPH_DBG` resolves to `2`.
 - `MORPH_LOG_LEVEL` resolves to `debug`.
 - `Crash handler enabled` resolves to `1`.
@@ -533,9 +555,9 @@ Expected:
 
 ### 4.4. Start native release session with X11 bridge disabled
 
-| Arch | Debian | Fedora | Bedrock | Description |
-|---|---|---|---|---|
-|[x]|[ ]|[x]|[ ]| **Start native release session with X11 bridge disabled** |
+| Arch | Debian | Fedora | Description |
+|---|---|---|---|
+|[x]|[x]|[x]| **Start native release session with X11 bridge disabled** |
 
 ```bash
 MORPH_X11=0 MORPH_BIN="$PWD/build/morph" \
@@ -559,13 +581,15 @@ start44
 ```
 
 Expected:
+
 - `MORPH_X11` resolves to `0`.
 - Native Wayland startup still completes.
 - No xwayland-satellite process is started by the wrapper/compositor path. Test this by running `xterm` within `alacritty`:
-  - Error message: No X11 display found.
+  Error message: No X11 display found.
 - Repeat with `testing/morph-session_dbg` only when checking dev-wrapper parity.
 
 References:
+
 - `scripts/morph-session`
 - `testing/morph-session_dbg`
 - `config/portals`
@@ -611,36 +635,18 @@ Use this filter after each check:
 rg -n 'Debug summary|Selected session mode|Nested mode detected|Nested clients use WAYLAND_DISPLAY|MORPH_X11|xwayland-satellite|Skipping .*launch_nested|Configured user .* hook file is not readable|Loaded managed portals file|Started xdg-desktop-portal|Compositor exited|Compositor binary' "$LOG_BASE"/morph-nested-startup.log "$LOG_BASE"/morph-nested-shutdown.log
 ```
 
-For repeated checks in this chapter, add these aliases to `~/.bashrc`:
-
-```bash
-alias nested_env='env | rg "^(WAYLAND_DISPLAY|DISPLAY|XDG_RUNTIME_DIR|XAUTHORITY)="'
-alias x11probe='command -v xdpyinfo || command -v xset; DISPLAY="$DISPLAY" xdpyinfo >/dev/null 2>&1 || DISPLAY="$DISPLAY" xset q >/dev/null 2>&1'
-alias logbase5='export LOG_BASE="${XDG_STATE_HOME:-$HOME/.local/state}/morph"'
-alias check5='rg -n "Debug summary|Selected session mode|Nested mode detected|Nested clients use WAYLAND_DISPLAY|MORPH_X11|xwayland-satellite|Skipping .*launch_nested|Configured user .* hook file is not readable|Loaded managed portals file|Started xdg-desktop-portal|Compositor exited|Compositor binary" "$LOG_BASE"/morph-nested-startup.log "$LOG_BASE"/morph-nested-shutdown.log'
-```
-
-Reload `.bashrc` and run the chapter-level checks with:
-
-```bash
-source ~/.bashrc
-nested_env
-x11probe
-logbase5
-check5
-```
-
 ### 5.1. Start the dev launcher inside an X11 or Wayland session
 
-| Arch | Debian | Fedora | Bedrock | Description |
-|---|---|---|---|---|
-|[x]|[ ]|[x]|[ ]| **Start the dev launcher inside an X11 or Wayland session** |
+| Arch | Debian | Fedora | Description |
+|---|---|---|---|
+|[x]|[x]|[x]| **Start the dev launcher inside an X11 or Wayland session** |
 
 ```bash
 ./testing/morph-session_dbg
 ```
 
 Expected:
+
 - `Selected session mode` is `nested-x11` or `nested-wayland`.
 - `MORPH_X11` resolves to its default value `1`.
 - `xwayland-satellite` starts, and an X11-only client such as `xterm` opens inside the nested Morph window.
@@ -651,15 +657,16 @@ Expected:
 
 ### 5.2. Start nested session with X11 bridge explicitly disabled
 
-| Arch | Debian | Fedora | Bedrock | Description |
-|---|---|---|---|---|
-|[x]|[ ]|[x]|[ ]| **Start nested session with X11 bridge explicitly disabled** |
+| Arch | Debian | Fedora | Description |
+|---|---|---|---|
+|[x]|[x]|[x]| **Start nested session with X11 bridge explicitly disabled** |
 
 ```bash
 MORPH_X11=0 ./testing/morph-session_dbg
 ```
 
 Expected:
+
 - `MORPH_X11` resolves to `0`.
 - The nested Wayland socket is still exported.
 - No xwayland-satellite startup is expected.
@@ -668,18 +675,20 @@ Expected:
 
 ### 5.3. Start nested session with a fixed X11 bridge display
 
-- [x] **Start nested session with a fixed X11 bridge display**
+[x] **Start nested session with a fixed X11 bridge display**
 
 ```bash
 MORPH_X11=1 MORPH_X11_DISPLAY=:12 ./testing/morph-session_dbg
 ```
 
 Expected:
+
 - `MORPH_X11` resolves to `1`.
 - `MORPH_X11_DISPLAY` resolves to `:12`.
 - The wrapper does not replace the caller-provided display with auto `:2..:99`.
 
 References:
+
 - `testing/morph-session_dbg`
 - `scripts/system_startup.sh`
 - [`docs/LAUNCHER.md`](docs/LAUNCHER.md)
@@ -709,7 +718,7 @@ rg -n 'Selected session mode|Config file path|Sourcing default user startup hook
 
 ### 6.1. Test only the user startup hook in a nested session
 
-- [x] **Test only the user startup hook in a nested session**
+[x] **Test only the user startup hook in a nested session**
 
 Create a minimal config without a `[hooks]` startup entry. This intentionally
 tests the XDG fallback path, where the managed hook layer sources
@@ -770,9 +779,9 @@ Expected for:
 
 ### 6.2. Test the managed portal base without a user portal override
 
-| Arch | Debian | Fedora | Bedrock | Description |
-|---|---|---|---|---|
-|[x]|[ ]|[ ]|[ ]| **Test the managed portal base without a user portal override** |
+| Arch | Debian | Fedora | Description |
+|---|---|---|---|
+|[x]|[x]|[x]| **Test the managed portal base without a user portal override** |
 
 This check must run in a **native session**. Ensure the managed portal file
 exists and that the resolver can find the default portal executable set before
@@ -906,7 +915,9 @@ Expected for:
 
 ### 6.3. Test a user portal override separately
 
-- [x] **Test a user portal override separately**
+| Arch | Debian | Fedora | Description |
+|---|---|---|---|
+|[x]|[x]|[x]| **Test a user portal override separately** |
 
 Repeat the preparation commands from test 2, then add only a user `portals`
 file that replaces `morph_start_portals()`:
@@ -993,7 +1004,7 @@ Expected for:
 
 ### 6.4. Repeat the startup-hook check with the debug wrapper
 
-- [x] **Repeat the startup-hook check with the debug wrapper. do the check in **Nested mode** only.**
+[x] **Repeat the startup-hook check with the debug wrapper. do the check in *Nested mode* only.**
 
 Create a minimal config without a `[hooks]` startup entry. This intentionally
 tests the XDG fallback path, where the managed hook layer sources
@@ -1046,6 +1057,7 @@ Expected for:
 - Hook ordering and nested portal behavior match the release-wrapper check.
 
 References:
+
 - `scripts/system_startup.sh`
 - `scripts/system_reload.sh`
 - `scripts/system_shutdown.sh`
@@ -1078,9 +1090,9 @@ Terminal layout:
 
 ### 7.1. Start a running session first
 
-| Arch | Debian | Fedora | Bedrock | Description |
-|---|---|---|---|---|
-|[x]|[ ]|[x]|[ ]| **Start a running session first** |
+| Arch | Debian | Fedora | Description |
+|---|---|---|---|
+|[x]|[x]|[x]| **Start a running session first** |
 
 In Terminal A, repeat the temporary preparation from section 6.1.:
 
@@ -1132,6 +1144,7 @@ Do not stop it with `Ctrl+C` or `Ctrl+Super+Alt + Esc` or until after the reload
 Do not start a second wrapper for the reload check.
 
 Expected:
+
 - Reload is tested against the already running nested compositor, not by starting a new wrapper.
 - Terminal B will run outside Morph, in the parent graphical session.
 - Terminal B can import the printed `HOOK_ROOT` and `LOG_BASE` values.
@@ -1139,9 +1152,9 @@ Expected:
 
 ### 7.2. Prepare the user reload hook in a second terminal
 
-| Arch | Debian | Fedora | Bedrock | Description |
-|---|---|---|---|---|
-|[x]|[ ]|[x]|[ ]| **Prepare the user reload hook in a second terminal** |
+| Arch | Debian | Fedora | Description |
+|---|---|---|---|
+|[x]|[x]|[x]| **Prepare the user reload hook in a second terminal** |
 
 In Terminal B, stay in the same repository checkout and import the `HOOK_ROOT`
 and `LOG_BASE` values printed by Terminal A. Example:
@@ -1166,15 +1179,16 @@ chmod +x "$HOOK_ROOT/xdg/morph/reload.sh"
 ```
 
 Expected:
+
 - Terminal B imported the same `HOOK_ROOT` that Terminal A used to start Morph.
 - `$HOOK_ROOT/xdg/morph/reload.sh` exists and is executable.
 - No edit to `config/reload.sh` is required for this manual test.
 
 ### 7.3. Trigger reload from the second terminal
 
-| Arch | Debian | Fedora | Bedrock | Description |
-|---|---|---|---|---|
-|[x]|[ ]|[x]|[ ]| **Trigger reload from the second terminal** |
+| Arch | Debian | Fedora | Description |
+|---|---|---|---|
+|[x]|[x]|[x]| **Trigger reload from the second terminal** |
 
 Run this in Terminal B. The socket check confirms that the command can reach the
 running compositor before triggering reload:
@@ -1191,6 +1205,7 @@ rg -n 'Starting managed reload hook|Sourcing default user reload hook|TEST reloa
 ```
 
 Expected:
+
 - Terminal B can see `$XDG_RUNTIME_DIR/morph-ipc.sock`.
 - The log contains `Starting managed reload hook`.
 - The log contains `Sourcing default user reload hook`.
@@ -1208,11 +1223,12 @@ rg -n 'Reloading true|No running instance found for reload: true|Stopped running
 ```
 
 Expected:
+
 - The log contains `Reloading true`.
 - The log contains either `No running instance found for reload: true` or `Stopped running instance for reload: true`.
 - The helper is available inside `reload.sh`, proving that the hook was sourced through the managed helper layer.
 
-- [x] **Test user reload hook with `reload_once <cmd ...>`**
+[x] **Test user reload hook with `reload_once <cmd ...>`**
 
 Inspect the same reload log after 7.3:
 
@@ -1221,10 +1237,11 @@ rg -n 'Starting component through reload_once: true|Skipping reload_once for alr
 ```
 
 Expected:
+
 - The log contains either `Starting component through reload_once: true` or `Skipping reload_once for already running component: true`.
 - Repeating `./build/morph --reload-config` must not create duplicate shutdown tracker entries in `shutdown_list.nfo` for the same component. See 8.2 for more infos.
 
-- [x] **Test reload hook config path `${MORPH_USER_CONFIG_DIR}/reload.sh`**
+[x] **Test reload hook config path `${MORPH_USER_CONFIG_DIR}/reload.sh`**
 
 This is a second reload-path check. It changes only the temporary config so the
 reload hook is explicit instead of using the default fallback path.
@@ -1255,11 +1272,13 @@ rg -n 'Sourcing default user reload hook|Sourcing user reload hook file from con
 ```
 
 Expected:
+
 - The new reload uses `Sourcing user reload hook file from config`.
 - Earlier fallback runs may still show `Sourcing default user reload hook` in the same log file; compare the newest matching lines.
 - Helper functions such as `reload`, `reload_once`, `launch`, `launch_nokill`, and `log_message` remain available.
 
 References:
+
 - `scripts/system_reload.sh`
 - `config/reload.sh`
 - [`docs/LAUNCHER.md`](docs/LAUNCHER.md)
@@ -1277,9 +1296,9 @@ down through the managed cleanup path.
 
 ### 8.1. End the running nested session normally
 
-| Arch | Debian | Fedora | Bedrock | Description |
-|---|---|---|---|---|
-|[x]|[ ]|[x]|[ ]| **End the running chapter 7 session normally** |
+| Arch | Debian | Fedora | Description |
+|---|---|---|---|
+|[x]|[x]|[x]| **End the running chapter 7 session normally** |
 
 In the nested Morph session from chapter 7, press the configured quit binding:
 
@@ -1288,6 +1307,7 @@ Ctrl+Super+Alt + Esc
 ```
 
 Expected:
+
 - The running chapter 7 session exits without using `Ctrl+C`.
 - Terminal A returns to the shell after the wrapper has completed shutdown.
 - The shutdown hook and managed cleanup run as part of the same session.
@@ -1295,9 +1315,9 @@ Expected:
 
 ### 8.2. Inspect the shutdown log
 
-| Arch | Debian | Fedora | Bedrock | Description |
-|---|---|---|---|---|
-|[x]|[ ]|[x]|[ ]| **Inspect the managed shutdown log** |
+| Arch | Debian | Fedora | Description |
+|---|---|---|---|
+|[x]|[x]|[x]| **Inspect the managed shutdown log** |
 
 Run this in Terminal B after 8.1 has returned Terminal A to the shell:
 
@@ -1306,6 +1326,7 @@ rg -n 'Starting session cleanup|Sourcing default user shutdown hook|Nested mode 
 ```
 
 Expected:
+
 - The log contains `Starting session cleanup`.
 - The log contains `Sourcing default user shutdown hook` because chapter 7 does not configure an explicit shutdown hook.
 - The log contains `Nested mode detected` for the nested wrapper path.
@@ -1315,9 +1336,9 @@ Expected:
 
 ### 8.3. Check `shutdown_list.nfo`
 
-| Arch | Debian | Fedora | Bedrock | Description |
-|---|---|---|---|---|
-|[x]|[ ]|[x]|[ ]| **Check the shutdown tracker file** |
+| Arch | Debian | Fedora | Description |
+|---|---|---|---|
+|[x]|[x]|[x]| **Check the shutdown tracker file** |
 
 Run this in Terminal B:
 
@@ -1326,6 +1347,7 @@ cat "$LOG_BASE"/shutdown_list.nfo
 ```
 
 Expected:
+
 - The tracker file exists under the chapter 7 `LOG_BASE` directory.
 - Components registered through managed helpers such as `reload` or `reload_once` can appear in the tracker.
 - Repeated reloads must not create duplicate tracker entries for the same `reload_once` component.
@@ -1334,9 +1356,9 @@ Expected:
 
 ### 8.4. Optional abnormal stop test
 
-| Arch | Debian | Fedora | Bedrock | Description |
-|---|---|---|---|---|
-|[x]|[ ]|[x]|[ ]| **Simulate an abnormal stop if needed** |
+| Arch | Debian | Fedora | Description |
+|---|---|---|---|
+|[x]|[x]|[x]| **Simulate an abnormal stop if needed** |
 
 Use this only after the normal shutdown test has been completed. Start a fresh
 chapter 7 session first if you want to compare abnormal-stop behavior against the
@@ -1349,15 +1371,16 @@ Ctrl+C
 ```
 
 Expected:
+
 - The result is documented separately from the normal shutdown result.
 - Missing normal shutdown-hook lines are acceptable for this optional abnormal-stop case.
 - Any remaining helper cleanup behavior is compared against the normal 8.1 to 8.3 result.
 
 ### 8.5. Clean up temporary files
 
-| Arch | Debian | Fedora | Bedrock | Description |
-|---|---|---|---|---|
-|[x]|[ ]|[x]|[ ]| **Remove the temporary hook test directory** |
+| Arch | Debian | Fedora | Description |
+|---|---|---|---|
+|[x]|[x]|[x]| **Remove the temporary hook test directory** |
 
 Run this in Terminal B after all chapter 8 checks are done:
 
@@ -1367,10 +1390,12 @@ unset HOOK_ROOT LOG_BASE
 ```
 
 Expected:
+
 - The temporary hook test directory is removed.
 - `HOOK_ROOT` and `LOG_BASE` are no longer set in Terminal B.
 
 References:
+
 - `scripts/system_shutdown.sh`
 - `config/shutdown.sh`
 - `scripts/shell-helpers.sh`
@@ -1388,9 +1413,9 @@ keep Terminal B in the same repository checkout.
 
 ### 9.1. Compare `--help` with `docs/CLI.md`
 
-| Arch | Debian | Fedora | Bedrock | Description |
-|---|---|---|---|---|
-|[x]|[ ]|[ ]|[ ]| **Compare CLI help output with the documented CLI reference** |
+| Arch | Debian | Fedora | Description |
+|---|---|---|---|
+|[x]|[x]|[x]| **Compare CLI help output with the documented CLI reference** |
 
 Run this in Terminal B:
 
@@ -1400,6 +1425,7 @@ rg -n -- '--help|--config|--allow-builtin-fallback|--layout|--scroll|--tile-move
 ```
 
 Expected:
+
 - `./build/morph --help` exits with status `0`.
 - Every option printed by `--help` is documented in [`docs/CLI.md`](docs/CLI.md).
 - [`docs/CLI.md`](docs/CLI.md) does not document removed or renamed options.
@@ -1407,9 +1433,9 @@ Expected:
 
 ### 9.2. Test IPC-only commands without a running compositor
 
-| Arch | Debian | Fedora | Bedrock | Description |
-|---|---|---|---|---|
-|[x]|[ ]|[ ]|[ ]| **Confirm IPC-only commands fail cleanly without a running session** |
+| Arch | Debian | Fedora | Description |
+|---|---|---|---|
+|[x]|[x]|[x]| **Confirm IPC-only commands fail cleanly without a running session** |
 
 Run this only when no Morph session is currently listening on the IPC socket:
 
@@ -1423,6 +1449,7 @@ set -e
 ```
 
 Expected:
+
 - The socket check confirms that no Morph IPC socket is available.
 - `--workspace next` exits with status `1` and reports that no running Morph IPC target was found.
 - `--tile-grid left 3` exits with status `1` and reports that no running Morph IPC target was found.
@@ -1431,9 +1458,9 @@ Expected:
 
 ### 9.3. Test IPC-only commands with a running compositor
 
-| Arch | Debian | Fedora | Bedrock | Description |
-|---|---|---|---|---|
-|[x]|[ ]|[ ]|[ ]| **Confirm IPC-only commands reach a running nested session** |
+| Arch | Debian | Fedora | Description |
+|---|---|---|---|
+|[x]|[x]|[x]| **Confirm IPC-only commands reach a running nested session** |
 
 Use a running nested Morph session from chapter 7, or start a fresh chapter 7
 session if chapter 8 already stopped it. Then run this in Terminal B:
@@ -1452,6 +1479,7 @@ rg -n 'ipc:|reload: loaded config|Starting managed reload hook|Managed reload ho
 ```
 
 Expected:
+
 - The socket check confirms that the running nested Morph session exposes IPC.
 - `--workspace next` exits with status `0`.
 - `--tile-grid left 3` exits with status `0` even when there is no focused tiled window to move.
@@ -1460,9 +1488,9 @@ Expected:
 
 ### 9.4. Test layout command behavior
 
-| Arch | Debian | Fedora | Bedrock | Description |
-|---|---|---|---|---|
-|[x]|[ ]|[ ]|[ ]| **Confirm `--layout` uses IPC when a session is already running** |
+| Arch | Debian | Fedora | Description |
+|---|---|---|---|
+|[x]|[x]|[x]| **Confirm `--layout` uses IPC when a session is already running** |
 
 Run this only while the nested Morph session from 9.3 is still running:
 
@@ -1474,6 +1502,7 @@ test -S "$XDG_RUNTIME_DIR/morph-ipc.sock"
 ```
 
 Expected:
+
 - Each `--layout` command exits with status `0`.
 - The running session receives the layout changes through IPC.
 - No additional compositor window appears.
@@ -1481,9 +1510,9 @@ Expected:
 
 ### 9.5. Check `--no-ipc` as startup-only option
 
-| Arch | Debian | Fedora | Bedrock | Description |
-|---|---|---|---|---|
-|[x]|[ ]|[ ]|[ ]| **Confirm `--no-ipc` is documented as startup-only behavior** |
+| Arch | Debian | Fedora | Description |
+|---|---|---|---|
+|[x]|[x]|[x]| **Confirm `--no-ipc` is documented as startup-only behavior** |
 
 Do not run `./build/morph --no-ipc` inside an already running manual test session
 unless you intentionally want to start a separate isolated compositor instance.
@@ -1494,11 +1523,13 @@ rg -n -- '--no-ipc|Disable IPC socket|startup-only|Startup-only' /tmp/morph-cli-
 ```
 
 Expected:
+
 - `--no-ipc` is present in `--help`.
 - [`docs/CLI.md`](docs/CLI.md) describes `--no-ipc` as disabling socket creation for the instance being started.
 - The report keeps `--no-ipc` separate from runtime IPC commands.
 
 References:
+
 - [`docs/CLI.md`](docs/CLI.md)
 - `src/main.c:6564`
 - `src/main.c:6747`
@@ -1510,15 +1541,16 @@ References:
 This chapter only checks the session desktop entry wiring. It does not install
 anything.
 
-| Arch | Debian | Fedora | Bedrock | Description |
-|---|---|---|---|---|
-|[x]|[ ]|[ ]|[ ]| **Check runtime and debug session desktop entries** |
+| Arch | Debian | Fedora | Description |
+|---|---|---|---|
+|[x]|[x]|[x]| **Check runtime and debug session desktop entries** |
 
 ```bash
 grep -nE '^(Name|Exec|TryExec)=' sessions/morph.desktop sessions/morph_dbg.desktop
 ```
 
 Expected:
+
 - `sessions/morph.desktop` has `Name=Morph`.
 - `sessions/morph.desktop` uses `Exec=morph-session` and `TryExec=morph-session`.
 - `sessions/morph_dbg.desktop` has `Name=Morph (Dev)`.
@@ -1526,6 +1558,7 @@ Expected:
 - The runtime desktop file points to the release wrapper; the debug desktop file points to the dev wrapper.
 
 References:
+
 - `sessions/morph.desktop`
 - `sessions/morph_dbg.desktop`
 
@@ -1542,9 +1575,9 @@ Clarification:
 
 ### 11.1. Inspect runtime install targets without installing
 
-| Arch | Debian | Fedora | Bedrock | Description |
-|---|---|---|---|---|
-|[x]|[ ]|[x]|[ ]| **Inspect Meson runtime install manifest** |
+| Arch | Debian | Fedora | Description |
+|---|---|---|---|
+|[x]|[x]|[x]| **Inspect Meson runtime install manifest** |
 
 With `jq` installed:
 
@@ -1564,6 +1597,7 @@ for src, dst in sorted(data.items(), key=lambda item: item[1]):
 ```
 
 Expected:
+
 - The command exits with status `0`.
 - The formatted output maps build/source files to install targets.
 - Runtime targets include `/usr/bin/morph`, `/usr/bin/morph-session`, `/etc/morph/*`, `/usr/share/wayland-sessions/morph.desktop`, icons, and docs.
@@ -1574,9 +1608,9 @@ Expected:
 
 ### 11.2. Install runtime files with Meson
 
-| Arch | Debian | Fedora | Bedrock | Description |
-|---|---|---|---|---|
-|[x]|[ ]|[x]|[ ]| **Install runtime files with Meson** |
+| Arch | Debian | Fedora | Description |
+|---|---|---|---|
+|[x]|[x]|[x]| **Install runtime files with Meson** |
 
 The following command installs morph in the system:
 
@@ -1585,6 +1619,7 @@ sudo meson install -C build
 ```
 
 Expected:
+
 - Runtime binary is installed as `/usr/bin/morph`.
 - Runtime wrapper is installed as `/usr/bin/morph-session`.
 - Managed runtime files are installed under `/etc/morph/`.
@@ -1593,84 +1628,11 @@ Expected:
 - Documentation keeps the repository-style `docs/` subdirectory under `/usr/share/doc/morph/docs/`.
 - No `testing/config/morph.conf` file is installed as `/usr/share/doc/morph/docs/morph.conf`.
 
-### 11.3. Inspect dev install targets without installing
+### 11.3. Test installed runtime session
 
-| Arch | Debian | Fedora | Bedrock | Description |
-|---|---|---|---|---|
-|[x]|[ ]|[x]|[ ]| **Preview dev install plan** |
-
-```bash
-./scripts/dev-install.sh install --dry --print-sudo-help
-```
-
-Expected:
-- The command prints dev install targets and sudo guidance.
-- No symlinks, desktop files, icons, or user config files are created.
-- The output makes clear which files would be linked under `${XDG_CONFIG_HOME:-$HOME/.config}/morph`.
-
-### 11.4. Install dev user links with `dev-install.sh`
-
-| Arch | Debian | Fedora | Bedrock | Description |
-|---|---|---|---|---|
-|[x]|[ ]|[ ]|[ ]| **Install dev user links** |
-
-```bash
-./scripts/dev-install.sh install --link-launcher --desktop-local
-```
-
-Expected:
-- Dev config symlinks are created under `${XDG_CONFIG_HOME:-$HOME/.config}/morph` when no real files already exist.
-- Existing real user files are left untouched and reported as warnings.
-- `--link-launcher` creates `~/.local/bin/morph-session_dbg` when possible.
-- `--desktop-local` installs the debug session desktop file and icon under `~/.local/share`.
-- No system-visible `/usr` debug links are created unless `--system-links` is explicitly used.
-
-### 11.5. Install dev session into system paths
-
-| Arch | Debian | Fedora | Bedrock | Description |
-|---|---|---|---|---|
-|[x]|[ ]|[x]|[ ]| **Install display-manager-visible dev session links under `/usr`** |
-
-Build the debug binary first if it does not exist yet:
-
-```bash
-if [ -f build_dbg/meson-private/coredata.dat ]; then
-    meson setup build_dbg --reconfigure --buildtype debug -Dstrip=false
-else
-    meson setup build_dbg --buildtype debug -Dstrip=false
-fi
-meson compile -C build_dbg
-```
-
-Then install the system-visible dev links:
-
-```bash
-./scripts/dev-install.sh install --system-links
-```
-
-Expected:
-- `/usr/bin/morph_dbg` is a symlink to `build_dbg/morph` in this checkout.
-- `/usr/bin/morph-session_dbg` is a symlink to `testing/morph-session_dbg` in this checkout.
-- `/usr/share/wayland-sessions/morph_dbg.desktop` is a symlink to `sessions/morph_dbg.desktop` in this checkout.
-- `/usr/share/icons/hicolor/scalable/apps/morph_dbg.svg` is a symlink to `assets/icons/morph_dbg.svg` in this checkout.
-- The dev session becomes visible to display managers that read `/usr/share/wayland-sessions`.
-- This does not install runtime `/etc/morph` files; it keeps using repository-local debug runtime paths.
-
-**General Note:**
-A login manager needs access to the session files. Therefore, you need to grant execute permissions to it (this allows traversing, but not listing files):
-```bash
-chmod o+x /home/<your_home>
-```
-
-### 11.6. Test installed sessions
-
-| Arch | Debian | Fedora | Bedrock | Description |
-|---|---|---|---|---|
-|[x]|[ ]|[x]|[ ]| **Test runtime and dev sessions through login manager and shell** |
-
-This check validates the installed entry points, not the repository-local wrapper
-commands from the earlier chapters. Run it after 11.2 for the runtime session and
-after 11.5 for the display-manager-visible dev session.
+| Arch | Debian | Fedora | Description |
+|---|---|---|---|
+|[x]|[x]|[x]| **Test runtime session through login manager and shell** |
 
 Runtime through login manager:
 
@@ -1690,6 +1652,98 @@ native path for this process:
 ```bash
 env -u WAYLAND_DISPLAY morph-session
 ```
+
+Expected:
+
+- The runtime login-manager entry starts the installed release wrapper from `/usr/bin/morph-session`.
+- The runtime TTY start also uses the installed release wrapper and starts a native Morph session.
+- The runtime `env -u WAYLAND_DISPLAY` start uses the same wrapper but removes the parent Wayland hint for this command.
+- Session can be exited through the configured quit binding; no nested parent compositor is required for this check.
+- Open ~/.local/state/morph/morph-startup.log and search for `Config File Path:`. If no ~/.config/morph/morph.conf available - system fallback to /etc/morph/morph.conf.
+
+References:
+
+- `meson.build`
+- `scripts/system-uninstall.sh`
+- `sessions/morph.desktop`
+
+### 11.4. Inspect dev install targets without installing
+
+| Arch | Debian | Fedora | Description |
+|---|---|---|---|
+|[x]|[x]|[x]| **Preview dev install plan** |
+
+```bash
+./scripts/dev-install.sh install --dry --print-sudo-help
+```
+
+Expected:
+
+- The command prints dev install targets and sudo guidance.
+- No symlinks, desktop files, icons, or user config files are created.
+- The output makes clear which files would be linked under `${XDG_CONFIG_HOME:-$HOME/.config}/morph`.
+
+### 11.5. Install dev user links with `dev-install.sh`
+
+| Arch | Debian | Fedora | Description |
+|---|---|---|---|
+|[x]|[x]|[x]| **Install dev user links** |
+
+```bash
+./scripts/dev-install.sh install --link-launcher --desktop-local
+```
+
+Expected:
+
+- Dev config symlinks are created under `${XDG_CONFIG_HOME:-$HOME/.config}/morph` when no real files already exist.
+- Existing real user files are left untouched and reported as warnings.
+- `--link-launcher` creates `~/.local/bin/morph-session_dbg` when possible.
+- `--desktop-local` installs the debug session desktop file and icon under `~/.local/share`.
+- No system-visible `/usr` debug links are created unless `--system-links` is explicitly used.
+
+### 11.6. Install dev session into system paths
+
+| Arch | Debian | Fedora | Description |
+|---|---|---|---|
+|[x]|[x]|[x]| **Install display-manager-visible dev session links under `/usr`** |
+
+Build the debug binary first if it does not exist yet:
+
+```bash
+if [ -f build_dbg/meson-private/coredata.dat ]; then
+    meson setup build_dbg --reconfigure --buildtype debug -Dstrip=false
+else
+    meson setup build_dbg --buildtype debug -Dstrip=false
+fi
+meson compile -C build_dbg
+```
+
+Then install the system-visible dev links:
+
+```bash
+./scripts/dev-install.sh install --system-links
+```
+
+Expected:
+
+- `/usr/bin/morph_dbg` is a symlink to `build_dbg/morph` in this checkout.
+- `/usr/bin/morph-session_dbg` is a symlink to `testing/morph-session_dbg` in this checkout.
+- `/usr/share/wayland-sessions/morph_dbg.desktop` is a symlink to `sessions/morph_dbg.desktop` in this checkout.
+- `/usr/share/icons/hicolor/scalable/apps/morph_dbg.svg` is a symlink to `assets/icons/morph_dbg.svg` in this checkout.
+- The dev session becomes visible to display managers that read `/usr/share/wayland-sessions`.
+- This does not install runtime `/etc/morph` files; it keeps using repository-local debug runtime paths.
+
+**General Note:**
+A login manager needs access to the session files. Therefore, you need to grant execute permissions to it (this allows traversing, but not listing files):
+```bash
+chmod o+x /home/<your_home>
+```
+
+### 11.6. Test installed dev session
+
+| Arch | Debian | Fedora | Description |
+|---|---|---|---|
+|[x]|[x]|[x]| **Test dev sessions through login manager and shell** |
 
 Dev through login manager:
 
@@ -1711,15 +1765,14 @@ env -u WAYLAND_DISPLAY morph-session_dbg
 ```
 
 Expected:
-- The runtime login-manager entry starts the installed release wrapper from `/usr/bin/morph-session`.
-- The runtime TTY start also uses the installed release wrapper and starts a native Morph session.
-- The runtime `env -u WAYLAND_DISPLAY` start uses the same wrapper but removes the parent Wayland hint for this command.
+
 - The dev login-manager entry starts the installed debug wrapper from `/usr/bin/morph-session_dbg`.
 - The dev TTY start also uses the installed debug wrapper and reports the debug runtime summary.
 - The dev `env -u WAYLAND_DISPLAY` start uses the same debug wrapper but removes the parent Wayland hint for this command.
-- All sessions can be exited through the configured quit binding; no nested parent compositor is required for this check.
+- Session can be exited through the configured quit binding; no nested parent compositor is required for this check.
 
 References:
+
 - `meson.build`
 - `scripts/dev-install.sh`
 - `scripts/system-uninstall.sh`
@@ -1734,39 +1787,41 @@ checks Meson's manifest and leaves changed files untouched.
 
 ### 12.1. Inspect runtime uninstall plan without removing files
 
-| Arch | Debian | Fedora | Bedrock | Description |
-|---|---|---|---|---|
-|[x]|[ ]|[x]|[ ]| **Inspect conservative runtime uninstall plan** |
+| Arch | Debian | Fedora | Description |
+|---|---|---|---|
+|[x]|[x]|[x]| **Inspect conservative runtime uninstall plan** |
 
 ```bash
 ./scripts/system-uninstall.sh --builddir build
 ```
 
 Expected:
+
 - The command prints installed paths from `meson introspect --installed build`.
 - No files are removed.
 - Missing files and changed files are reported but left untouched.
 
 ### 12.2. Remove runtime files with the conservative helper
 
-| Arch | Debian | Fedora | Bedrock | Description |
-|---|---|---|---|---|
-|[x]|[ ]|[x]|[ ]| **Remove unchanged runtime install artifacts** |
+| Arch | Debian | Fedora | Description |
+|---|---|---|---|
+|[x]|[x]|[x]| **Remove unchanged runtime install artifacts** |
 
 ```bash
 sudo ./scripts/system-uninstall.sh --builddir build --remove
 ```
 
 Expected:
+
 - Only files that still match the current Meson install sources are removed.
 - Changed files are left untouched with a warning.
 - Real user files under `~/.config/morph` are not touched.
 
 ### 12.3. Remove runtime files with the Meson/Ninja uninstall target
 
-| Arch | Debian | Fedora | Bedrock | Description |
-|---|---|---|---|---|
-|[x]|[ ]|[x]|[ ]| **Check Meson-generated uninstall target** |
+| Arch | Debian | Fedora | Description |
+|---|---|---|---|
+|[x]|[x]|[x]| **Check Meson-generated uninstall target** |
 
 The Meson command set commonly does not provide a `meson uninstall` command,
 but the generated Ninja build has an `uninstall` target. Check the local Meson
@@ -1779,6 +1834,7 @@ sudo ninja -C build uninstall
 ```
 
 Expected:
+
 - The Meson help check documents whether the local Meson package exposes a direct uninstall command.
 - The Ninja target check confirms that the build has an `uninstall` target.
 - The final command removes Meson-installed runtime files according to Meson's generated uninstall logic.
@@ -1786,30 +1842,32 @@ Expected:
 
 ### 12.4. Remove dev user links with `dev-install.sh`
 
-| Arch | Debian | Fedora | Bedrock | Description |
-|---|---|---|---|---|
-|[x]|[ ]|[x]|[ ]| **Remove dev user links** |
+| Arch | Debian | Fedora | Description |
+|---|---|---|---|
+|[x]|[x]|[x]| **Remove dev user links** |
 
 ```bash
 ./scripts/dev-install.sh uninstall --link-launcher
 ```
 
 Expected:
+
 - Dev symlinks created by `dev-install.sh` are removed when they still point at this checkout.
 - Unrelated symlinks are left untouched.
 - Real user files are never removed.
 
 ### 12.5. Remove system-visible dev session links
 
-| Arch | Debian | Fedora | Bedrock | Description |
-|---|---|---|---|---|
-|[x]|[ ]|[x]|[ ]| **Remove `/usr` dev session links** |
+| Arch | Debian | Fedora | Description |
+|---|---|---|---|
+|[x]|[x]|[x]| **Remove `/usr` dev session links** |
 
 ```bash
 ./scripts/dev-install.sh uninstall --system-links
 ```
 
 Expected:
+
 - `/usr/bin/morph_dbg` is removed.
 - `/usr/bin/morph-session_dbg` is removed.
 - `/usr/share/wayland-sessions/morph_dbg.desktop` is removed.
@@ -1817,6 +1875,7 @@ Expected:
 - Runtime `/usr/bin/morph`, `/usr/bin/morph-session`, and `/etc/morph/*` are not touched by this dev uninstall path.
 
 References:
+
 - `scripts/system-uninstall.sh`
 - `scripts/dev-install.sh`
 - `scripts/morph-uninstall.sh`
@@ -1829,9 +1888,9 @@ Meson/dev-install flows above without hiding what they do.
 
 ### 13.1. Build
 
-| Arch | Debian | Fedora | Bedrock | Description |
-|---|---|---|---|---|
-|[x]|[ ]|[x]|[ ]| **Build runtime and debug variants through the helper** |
+| Arch | Debian | Fedora | Description |
+|---|---|---|---|
+|[x]|[x]|[x]| **Build runtime and debug variants through the helper** |
 
 ```bash
 ./scripts/morph-build.sh --runtime
@@ -1839,15 +1898,16 @@ Meson/dev-install flows above without hiding what they do.
 ```
 
 Expected:
+
 - `--runtime` configures or reconfigures `build/` as release with stripping enabled and compiles `build/morph`.
 - `--debug` configures or reconfigures `build_dbg/` as debug with stripping disabled and compiles `build_dbg/morph`.
 - Existing build directories are reconfigured in-place.
 
 ### 13.2. Install
 
-| Arch | Debian | Fedora | Bedrock | Description |
-|---|---|---|---|---|
-|[x]|[ ]|[x]|[ ]| **Preview unified runtime/debug install helper** |
+| Arch | Debian | Fedora | Description |
+|---|---|---|---|
+|[x]|[x]|[x]| **Preview unified runtime/debug install helper** |
 
 ```bash
 ./scripts/morph-install.sh --runtime --dry
@@ -1856,6 +1916,7 @@ Expected:
 ```
 
 Expected:
+
 - `--runtime --dry` prints the Meson runtime install command and manifest-derived targets without installing files.
 - `--debug --dry` prints the delegated dev install plan, including `~/.config/morph/*`, `~/.local/bin/morph-session_dbg`, and the system-visible debug session links, without creating them.
 - `--both --dry` prints runtime first and debug second.
@@ -1863,9 +1924,9 @@ Expected:
 
 ### 13.3. Uninstall
 
-| Arch | Debian | Fedora | Bedrock | Description |
-|---|---|---|---|---|
-|[x]|[ ]|[x]|[ ]| **Preview unified runtime/debug uninstall helper** |
+| Arch | Debian | Fedora | Description |
+|---|---|---|---|
+|[x]|[x]|[x]| **Preview unified runtime/debug uninstall helper** |
 
 ```bash
 ./scripts/morph-uninstall.sh --runtime --dry
@@ -1874,28 +1935,32 @@ Expected:
 ```
 
 Expected:
+
 - `--runtime --dry` prints the conservative runtime uninstall command without removing files.
 - `--debug --dry` prints the delegated dev uninstall plan, including matching `~/.config/morph/*` links, `~/.local/bin/morph-session_dbg`, and the system-visible debug session links, without removing them.
 - `--both --dry` prints runtime first and debug second.
 - The debug uninstall path removes only symlinks that still point back to this checkout, removes an empty `~/.config/morph` directory after those links are gone, and leaves unrelated user files untouched.
 
 References:
+
 - `scripts/morph-build.sh`
 - `scripts/morph-install.sh`
 - `scripts/morph-uninstall.sh`
 
 ## 14. Documentation Structure
 
-- [x] **Were the old root documents moved into `docs/` sensibly?**
-- [x] **Is [`docs/OVERVIEW.md`](docs/OVERVIEW.md) the right central entry point?**
-- [x] **Are `docs/roadmaps/` and [`docs/BACKLOG.md`](docs/BACKLOG.md) placed logically?**
+[x] **Were the old root documents moved into `docs/` sensibly?**
+[x] **Is [`docs/OVERVIEW.md`](docs/OVERVIEW.md) the right central entry point?**
+[x] **Are `docs/roadmaps/` and [`docs/BACKLOG.md`](docs/BACKLOG.md) placed logically?**
 
 Expected:
+
 - `docs/` contains the current documentation centrally
 - `sessions/` contains the session desktop files separately from the rest
 - no old parallel structure such as `docs_old/` remains
 
 References:
+
 - [`docs/OVERVIEW.md`](docs/OVERVIEW.md)
 - [`docs/roadmaps/Roadmap_install-and-user-setup.md`](docs/roadmaps/Roadmap_install-and-user-setup.md)
 - [`docs/BACKLOG.md`](docs/BACKLOG.md)
