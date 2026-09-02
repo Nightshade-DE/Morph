@@ -1,17 +1,17 @@
 # Feature Request: IPC Stabilisation and wayctl Alignment
 
-This document captures IPC stabilization proposals and alignment strategy between stackcomp and wayctl.
+This document captures IPC stabilization proposals and alignment strategy between morph and wayctl.
 
 ## Current Context
 
-stackcomp and wayctl are both dual-surface systems, but with different priorities:
+morph and wayctl are both dual-surface systems, but with different priorities:
 
-- stackcomp: local command socket + Wayland protocol servers
+- morph: local command socket + Wayland protocol servers
 - wayctl: protocol-driven CLI + optional daemon IPC envelope
 
 The sections below describe current differences and a proposed convergence strategy.
 
-## stackcomp IPC vs wayctl IPC
+## morph IPC vs wayctl IPC
 
 wayctl itself is also dual-surface:
 
@@ -20,7 +20,7 @@ wayctl itself is also dual-surface:
 
 Practical differences today:
 
-| Topic | stackcomp | wayctl |
+| Topic | morph | wayctl |
 |---|---|---|
 | Primary local automation | Plain text Unix socket commands | CLI commands and optional daemon protocol envelopes |
 | Workspace create/remove/assign | Not implemented in ext-workspace handlers yet | Commands exist, but only work if compositor supports capabilities |
@@ -28,11 +28,11 @@ Practical differences today:
 | Event streaming API | No dedicated JSON/event socket yet | Daemon monitor topics and subscription model |
 | Stability contract | Command strings in compositor docs | Versioned CLI + daemon handshake/capabilities model |
 
-## Strategy To Align stackcomp and wayctl
+## Strategy To Align morph and wayctl
 
-Goal: preserve stackcomp's simple local socket while exposing capability-driven behavior that wayctl can use consistently.
+Goal: preserve morph's simple local socket while exposing capability-driven behavior that wayctl can use consistently.
 
-1. Define a capability matrix in stackcomp docs/code:
+1. Define a capability matrix in morph docs/code:
    - workspace: `activate`, `create`, `remove`, `assign`
    - toplevel: `focus`, `close`, `state`
 2. Implement missing ext-workspace operations server-side (or explicitly reject with protocol errors if unsupported).
@@ -48,5 +48,5 @@ Goal: preserve stackcomp's simple local socket while exposing capability-driven 
 
 ## Short-Term Recommendation
 
-- treat wayctl as the protocol-validation client and stackcomp socket as the fast local control plane.
+- treat wayctl as the protocol-validation client and morph socket as the fast local control plane.
 - converge behavior first (capabilities and responses), then converge transport semantics.

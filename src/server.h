@@ -12,6 +12,7 @@ struct wlr_compositor;
 struct wlr_input_device;
 struct wlr_cursor;
 struct wlr_data_device_manager;
+struct wlr_primary_selection_v1_device_manager;
 struct wlr_output;
 struct wlr_output_layout;
 struct wlr_renderer;
@@ -29,6 +30,7 @@ struct wlr_layer_shell_v1;
 struct wlr_layer_surface_v1;
 struct wlr_scene_layer_surface_v1;
 struct wlr_xdg_output_manager_v1;
+struct wlr_xdg_activation_v1;
 struct wlr_screencopy_manager_v1;
 struct wlr_foreign_toplevel_manager_v1;
 struct wlr_foreign_toplevel_handle_v1;
@@ -124,9 +126,22 @@ struct comp_toplevel
 	struct wl_listener request_maximize;
 	struct wl_listener request_fullscreen;
 	struct wl_listener request_minimize;
+	struct wl_listener set_parent;
 	struct wl_listener set_title;
 	struct wl_listener set_app_id;
 	struct wl_listener new_popup;
+	/** Latest compositor configure not yet observed in an acknowledged surface commit. */
+	uint32_t pending_configure_serial;
+	/** Fixed opposite edges used while left/top resize buffers are being committed. */
+	uint32_t resize_anchor_edges;
+	/** Absolute right edge captured at grab start for left-edge resize anchoring. */
+	int resize_anchor_right;
+	/** Absolute bottom edge captured at grab start for top-edge resize anchoring. */
+	int resize_anchor_bottom;
+	/** True while scene position must follow client commits to keep the far edge stable. */
+	bool resize_anchor_active;
+	/** Delays anchor cleanup until the final non-resizing commit has been observed. */
+	bool resize_anchor_finishing;
 	bool minimized;
 	int restore_x;
 	int restore_y;
@@ -134,6 +149,16 @@ struct comp_toplevel
 	int restore_height;
 	bool has_restore;
 	struct wlr_foreign_toplevel_handle_v1 *foreign_toplevel;
+	/** Last title sent to foreign-toplevel clients; suppresses redundant panel redraws. */
+	char *foreign_title;
+	/** Last app_id sent to foreign-toplevel clients; suppresses redundant panel redraws. */
+	char *foreign_app_id;
+	/** True after boolean foreign-toplevel state has been initialized once. */
+	bool foreign_state_valid;
+	bool foreign_activated;
+	bool foreign_maximized;
+	bool foreign_fullscreen;
+	bool foreign_minimized;
 	struct wl_listener foreign_request_activate;
 	struct wl_listener foreign_request_close;
 	struct wlr_xdg_toplevel_decoration_v1 *xdg_decoration;
@@ -183,8 +208,11 @@ struct comp_server
 	struct wlr_viewporter *viewporter;
 	struct wlr_subcompositor *subcompositor;
 	struct wlr_data_device_manager *data_device_mgr;
+	struct wlr_primary_selection_v1_device_manager *primary_selection_mgr;
 	struct wlr_output_layout *output_layout;
 	struct wlr_xdg_output_manager_v1 *xdg_output_manager;
+	/** Routes launcher/notification activation tokens into the compositor's focus policy. */
+	struct wlr_xdg_activation_v1 *xdg_activation;
 	struct wlr_screencopy_manager_v1 *screencopy_manager;
 	struct wlr_foreign_toplevel_manager_v1 *foreign_toplevel_manager;
 	struct wlr_pointer_constraints_v1 *pointer_constraints;
@@ -211,6 +239,8 @@ struct comp_server
 	struct wl_listener new_output;
 	struct wl_listener new_input;
 	struct wl_listener xdg_shell_new_toplevel;
+	/** Handles xdg-activation focus requests after wlroots validates the token. */
+	struct wl_listener xdg_activation_request_activate;
 	struct wlr_xdg_decoration_manager_v1 *xdg_decoration_manager;
 	struct wl_listener new_xdg_decoration;
 	struct wl_listener cursor_motion;
@@ -220,6 +250,7 @@ struct comp_server
 	struct wl_listener cursor_frame;
 	struct wl_listener seat_request_cursor;
 	struct wl_listener seat_request_set_selection;
+	struct wl_listener seat_request_set_primary_selection;
 	struct wl_listener seat_pointer_focus_change;
 	struct wl_listener new_pointer_constraint;
 	struct wl_listener pointer_constraint_commit;
@@ -243,7 +274,13 @@ struct comp_server
 	int grab_view_x, grab_view_y;
 	int grab_view_width, grab_view_height;
 	uint32_t resize_edges;
+	uint32_t resize_last_configure_msec;
+	int resize_pending_x, resize_pending_y;
+	int resize_pending_width, resize_pending_height;
+	bool resize_pending_valid;
 	bool swallow_left_release;
+	/** Prevent a consumed Logo keybind from leaking into the next pointer press as Super+drag. */
+	bool suppress_logo_pointer_drag;
 	/** Touch→pointer emulation: `touch_pointer_emu` is true for the active `touch_pointer_emu_id` contact. */
 	bool touch_pointer_emu;
 	int32_t touch_pointer_emu_id;

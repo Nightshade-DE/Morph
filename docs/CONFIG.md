@@ -1,32 +1,29 @@
-# Stackcomp configuration
+# Morph configuration
 
-This file documents the **INI-style** configuration read at compositor startup. The format is line-oriented: sections in square brackets, `key = value` pairs, `#` comments, and blank lines ignored.
+This file documents the **INI-style** configuration read at compositor startup. The format is line-oriented: sections in square brackets, `key = value` pairs, `#` comments, and blank lines are ignored.
 
 ## Where the file is loaded from
 
-1. **`stackcomp -c PATH` / `stackcomp --config PATH`** — highest priority when given.
-2. **`$STACKCOMP_CONFIG`** — if set to a readable path.
+1. **`morph -c PATH` / `morph --config PATH`** — highest priority when given.
+2. **[`$MORPH_CONFIG`](ENVIRONMENT.md#morph-config)** — if set to a readable path.
 3. **Default search** (first file that exists and is readable):
-   - `$XDG_CONFIG_HOME/stackcomp/config`
-   - `~/.config/stackcomp/config`
+   - `$XDG_CONFIG_HOME/morph/morph.conf`
+   - `~/.config/morph/morph.conf`
+   - `/etc/morph/morph.conf`
 
-If no file is found, or the file defines **no** `[bind]` entries, **built-in defaults** are used (Super+Return runs `${TERMINAL:-foot}` via `sh -c`, Super+Shift+Q closes the focused client, Super+Escape quits, Super+t toggles stack/tile layout).
+If no file is found, startup stops with a log message instead of silently continuing without a config. You can opt into the built-in fallback behavior with **`--allow-builtin-fallback`** or **[`MORPH_ALLOW_BUILTIN_FALLBACK=1`](ENVIRONMENT.md#morph-allow-builtin-fallback)**. The fallback provides only four emergency bindings: terminal (`Super+Return`), close (`Super+Shift+Q`), quit (`Super+Escape`), and layout toggle (`Super+T`). It does not synthesize hooks, application rules, portal setup, input mappings, workspace bindings, or startup applications. If the file exists but defines **no** `[bind]` entries, the same built-in binds are still generated as a compatibility fallback.
 
-A starting point for your own file is **`stackcomp.conf.example`** in this repository.
+A starting point for your own file is **[`morph.conf.example`](morph.conf.example)** in this repository.
 
 ---
 
-## Launcher environment (stackcomp_run)
-
-Besides CLI `-c/--config` and `$STACKCOMP_CONFIG`, the config path can also be
-selected via launcher environment variable `STACKCOMP_CFG` in
-`testing/stackcomp_run`.
+## Launcher environment ([morph-session_dbg](../testing/morph-session_dbg))
 
 Further launcher details are documented in:
 
-- `testing/LAUNCHER.md`
+- [`docs/LAUNCHER.md`](LAUNCHER.md)
 
-This keeps CONFIG.md focused on INI syntax and behavior.
+This keeps `docs/CONFIG.md` focused on INI syntax and behavior.
 
 ---
 
@@ -40,7 +37,7 @@ Each `[bind]` block describes **one** shortcut. Start a new `[bind]` section for
 | **`key`** | Yes | Keysym name passed to **xkb_keysym_from_name** (case-insensitive), for example `Return`, `Escape`, `Q`, `Left`, `F1`. |
 | **`action`** | Yes | What to do when the chord matches (see **Actions** below). |
 | **`command`** | For some actions | Shell command line for **`exec`**, or parameter for **`tile_move`** / **`tile_grid_move`** as documented below. |
-| **`when`** | No | If set, **`/bin/sh -c '…'`** is run **on every key press** before the bind is considered; **exit status 0** means the bind is active. Non-zero skips the bind. The shell sees **`STACKCOMP_LAYOUT`** as `stack`, `tile`, or `scroll`, and **`STACKCOMP_WORKSPACE`** as the current workspace number **`1`**..**`9`** (decimal string). |
+| **`when`** | No | If set, **`/bin/sh -c '…'`** is run **on every key press** before the bind is considered; **exit status 0** means the bind is active. Non-zero skips the bind. The shell sees **[`MORPH_LAYOUT`](ENVIRONMENT.md#morph-layout)** as `stack`, `tile`, or `scroll`, and **[`MORPH_WORKSPACE`](ENVIRONMENT.md#morph-workspace)** as the current workspace number **`1`**..**`9`** (decimal string). |
 
 Bindings are matched using modifier and keysym sampled **before** the compositor updates XKB state from the key event, so the chord matches what the user pressed.
 
@@ -51,13 +48,13 @@ Bindings are matched using modifier and keysym sampled **before** the compositor
 mods = Super+Shift
 key = Right
 action = scroll_next
-when = [ "$STACKCOMP_LAYOUT" = scroll ]
+when = [ "$MORPH_LAYOUT" = scroll ]
 
 [bind]
 mods = Super+Shift
 key = Right
 action = tile_right
-when = [ "$STACKCOMP_LAYOUT" = tile ]
+when = [ "$MORPH_LAYOUT" = tile ]
 ```
 
 ### Security
@@ -69,14 +66,15 @@ when = [ "$STACKCOMP_LAYOUT" = tile ]
 ## Section `[hooks]` (optional)
 
 A single **`[hooks]`** block may define shell snippets run at lifecycle points. Each value is passed to **`/bin/sh -c`** (same trust model as **`exec`**).
+Use **`${MORPH_USER_CONFIG_DIR}`** for user hook files and **`${MORPH_SYSTEM_CONFIG_DIR}`** only for managed/system hook files; in release sessions the system directory normally resolves to `/etc/morph`.
 
 | Key | When it runs |
 |-----|----------------|
-| **`startup`** / **`on_startup`** | After the compositor has started the backend and set **`WAYLAND_DISPLAY`** (async: stackcomp does not wait for the shell to exit). |
-| **`shutdown`** / **`on_shutdown`** | When the compositor is exiting after a normal session (**after** `wl_display_run` returns). Stackcomp **waits** for this process to exit before tearing down the display. |
-| **`reload`** / **`on_reload`** | After a successful **config reload** (IPC **`reload config`** or **`reload`**, or **`stackcomp --reload-config`**). Runs under the **new** config (async). |
+| **`startup`** / **`on_startup`** | After the compositor has started the backend and set **`WAYLAND_DISPLAY`** (async: morph does not wait for the shell to exit). |
+| **`shutdown`** / **`on_shutdown`** | When the compositor is exiting after a normal session (**after** `wl_display_run` returns). Morph **waits** for this process to exit before tearing down the display. |
+| **`reload`** / **`on_reload`** | After a successful **config reload** (IPC **`reload config`** or **`reload`**, or **`morph --reload-config`**). Runs under the **new** config (async). In the managed session flow, file-based reload hooks also receive helper functions such as `reload <cmd ...>`. |
 
-If there is no config file path (defaults-only startup) and no default file on disk, **`reload config`** cannot resolve a path and fails with a log message.
+If no startup config path can be resolved and no default config file exists, **`reload config`** cannot resolve a path and fails with a log message.
 
 ---
 
@@ -100,7 +98,7 @@ Optional defaults for **xdg-decoration** (see **`[decoration_rule]`** below). If
 
 | Key | Default | Meaning |
 |-----|---------|---------|
-| **`strip_in_tile_scroll`** / **`default_strip`** / **`strip`** | `yes` | If **yes**, windows that do **not** match a `[decoration_rule]` use **server-side** decoration mode in tile/scroll (clients hide their own title bar; stackcomp does not draw SSD, so the window appears frameless). If **no**, those windows keep **client-side** decorations in tile/scroll. |
+| **`strip_in_tile_scroll`** / **`default_strip`** / **`strip`** | `yes` | If **yes**, windows that do **not** match a `[decoration_rule]` use **server-side** decoration mode in tile/scroll (clients hide their own title bar; morph does not draw SSD, so the window appears frameless). If **no**, those windows keep **client-side** decorations in tile/scroll. |
 
 **Stack** layout and **tile-float** windows always use **client-side** decorations (normal title bars), regardless of this section.
 
@@ -159,7 +157,7 @@ Unless noted, tiling-related actions are **no-ops** when not in **tile** layout,
 
 ### Workspaces (9 virtual desktops)
 
-There are **nine** workspaces (**`1`**..**`9`** in config and IPC; internally zero-based). New windows open on the **current** workspace. Only windows on the **active** workspace are **visible** and receive pointer hits; tiling and scroll logic apply **per workspace**. In **scroll** layout, the visible column index is stored **per workspace and per physical output** (multi-monitor: each head scrolls independently). **`when=`** predicates can use **`STACKCOMP_WORKSPACE`**.
+There are **nine** workspaces (**`1`**..**`9`** in config and IPC; internally zero-based). New windows open on the **current** workspace. Only windows on the **active** workspace are **visible** and receive pointer hits; tiling and scroll logic apply **per workspace**. In **scroll** layout, the visible column index is stored **per workspace and per physical output** (multi-monitor: each head scrolls independently). **`when=`** predicates can use **[`MORPH_WORKSPACE`](ENVIRONMENT.md#morph-workspace)**.
 
 | `action` | Aliases | `command` | Effect |
 |----------|---------|-----------|--------|
@@ -210,36 +208,36 @@ Rules control how individual XDG toplevels behave in **tile** layout. **First ma
 
 | Key | Meaning |
 |-----|---------|
-| **`app_id`** | POSIX **extended** regex matched against the window’s **app_id** (Wayland). |
+| **`app_id`** / **`app-id`** | POSIX **extended** regex matched against the window’s **app_id** (Wayland). |
 | **`title`** | POSIX **extended** regex matched against the window’s **title**. |
 | **`mode`** | **`tile`** / **`tiled`** (default): normal grid cell. **`float`** / **`floating`**: not placed in the grid; shown centered when mapped and raised on focus in tile mode. |
 | **`order`** | Integer; **lower** values sort **earlier** in the tile list among tiled windows. |
 
-If both **`app_id`** and **`title`** are set on a rule, **both** must match. At least one of **`app_id`** or **`title`** must be present for a flushed rule to apply.
+If both **`app_id`** and **`title`** are set on a rule, **both** must match. At least one of **`app_id`** or **`title`** must be present for the rule to apply.
 
 ---
 
 ## Related: IPC and CLI (not config syntax)
 
-From another terminal you can send one-line commands to a running instance (Unix socket under **`$XDG_RUNTIME_DIR/stackcomp-ipc.sock`** when IPC is enabled), for example:
+From another terminal you can send one-line commands to a running instance (Unix socket under **`$XDG_RUNTIME_DIR/morph-ipc.sock`** when IPC is enabled), for example:
 
-These are the current compositor entrypoints for local control. The Wayland-facing workspace protocol is intentionally narrower for now: **`activate`** works, while **`create_workspace`**, **`remove_workspace`**, and **`assign_workspace`** are still no-ops for external clients that talk to **`ext_workspace_manager_v1`**.
+These are the current compositor control commands for local use. The Wayland-facing workspace protocol is intentionally narrower for now: **`activate`** works, while **`create_workspace`**, **`remove_workspace`**, and **`assign_workspace`** are still no-ops for external clients that talk to **`ext_workspace_manager_v1`**.
 
 - **`layout stack`**, **`layout tile`**, **`layout scroll`**, **`layout toggle`**
 - **`tile move …`** (same semantics as sort-order actions above)
 - **`scroll …`** or **`scroll move …`** — **`prev`** / **`left`**, **`next`** / **`right`**, or a **signed integer** (viewport steps in scroll layout; no-op if not in scroll layout)
 - **`tile grid …`** (same forms as **`tile_grid_move` `command=`**)
-- **`reload config`** or **`reload`** — re-read the config file (same path as at startup, or the default path), replace keybinds and tile rules, refresh tile layout if applicable, then run the new file’s **`reload`** hook from **`[hooks]`**.
+- **`reload config`** or **`reload`** — re-read the config file (same path as at startup, or the default path), replace keybinds and tile rules, refresh tile layout if applicable, then run the new file’s **`reload`** hook from **`[hooks]`**. In the managed launcher flow this passes through `system_reload.sh` first.
 - **`workspace N`** — switch to workspace **`1`**..**`9`**
 - **`workspace next`** / **`workspace prev`** — cycle workspaces (wraps)
 - **`workspace move N`** — move the focused toplevel to workspace **`N`**
 
-The **`stackcomp`** binary also accepts **`--layout`**, **`--scroll`** (same as **`--layout scroll`**), **`--tile-move`**, **`--scroll-move`**, **`--tile-grid`**, **`--workspace`** **`1`**..**`9`** or **`next`** / **`prev`**, **`--workspace-move`** **`N`** (move focused window to workspace **`N`**), and **`--reload-config`** for scripting; see **`COMPOSITOR.md`** for behavior when no compositor is listening.
+The **`morph`** binary also accepts **`--layout`**, **`--scroll`** (same as **`--layout scroll`**), **`--tile-move`**, **`--scroll-move`**, **`--tile-grid`**, **`--workspace`** **`1`**..**`9`** or **`next`** / **`prev`**, **`--workspace-move`** **`N`** (move focused window to workspace **`N`**), **`--reload-config`** for scripting, and **`--allow-builtin-fallback`** to keep the old no-config fallback behavior; see **`docs/COMPOSITOR.md`** for behavior when no compositor is listening.
 
 ---
 
 ## See also
 
-- **`COMPOSITOR.md`** — compositor scope, architecture notes, build and run.
-- **`PROTOCOLS.md`** — Wayland globals, wlroots vs portal expectations, unsupported protocols.
-- **`stackcomp.conf.example`** — commented sample file in the repo.
+- **`docs/COMPOSITOR.md`** — compositor scope, architecture notes, build and run.
+- **`docs/PROTOCOLS.md`** — Wayland globals, wlroots vs portal expectations, unsupported protocols.
+- **`morph.conf.example`** — commented sample file in the repo.

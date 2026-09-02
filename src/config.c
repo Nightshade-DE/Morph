@@ -253,14 +253,14 @@ static const char *layout_name(enum comp_layout layout) {
 }
 
 void comp_config_sync_layout_env(enum comp_layout layout) {
-	setenv("STACKCOMP_LAYOUT", layout_name(layout), 1);
+	setenv("MORPH_LAYOUT", layout_name(layout), 1);
 }
 
 void comp_config_sync_shell_env(struct comp_server *server) {
-	setenv("STACKCOMP_LAYOUT", layout_name(server->layout), 1);
+	setenv("MORPH_LAYOUT", layout_name(server->layout), 1);
 	char wbuf[16];
 	snprintf(wbuf, sizeof(wbuf), "%d", server->current_workspace + 1);
-	setenv("STACKCOMP_WORKSPACE", wbuf, 1);
+	setenv("MORPH_WORKSPACE", wbuf, 1);
 }
 
 static void apply_layout_anim_defaults(struct comp_config *cfg) {
@@ -330,21 +330,35 @@ static void load_defaults(struct comp_config *cfg) {
 	append_bind(cfg, &b);
 }
 
-/** Build config path candidates from XDG/HOME and return the first readable one. */
+/** Return true when builtin config fallback was explicitly enabled. */
+bool comp_config_builtin_fallback_enabled(void) {
+	const char *value = getenv("MORPH_ALLOW_BUILTIN_FALLBACK");
+	if (!value || !value[0]) {
+		return false;
+	}
+	return !strcasecmp(value, "1") || !strcasecmp(value, "true") || !strcasecmp(value, "yes") ||
+		   !strcasecmp(value, "on");
+}
+
+/** Build config path candidates from XDG/HOME/system and return the first readable one. */
 bool comp_config_default_path(char *out, size_t out_len) {
 	const char *xdg = getenv("XDG_CONFIG_HOME");
 	if (xdg && xdg[0]) {
-		if (snprintf(out, out_len, "%s/stackcomp/config", xdg) < (int)out_len &&
+		if (snprintf(out, out_len, "%s/morph/morph.conf", xdg) < (int)out_len &&
 			access(out, R_OK) == 0) {
 			return true;
 		}
 	}
 	const char *home = getenv("HOME");
 	if (home && home[0]) {
-		if (snprintf(out, out_len, "%s/.config/stackcomp/config", home) < (int)out_len &&
+		if (snprintf(out, out_len, "%s/.config/morph/morph.conf", home) < (int)out_len &&
 			access(out, R_OK) == 0) {
 			return true;
 		}
+	}
+	if (snprintf(out, out_len, "%s", "/etc/morph/morph.conf") < (int)out_len &&
+		access(out, R_OK) == 0) {
+		return true;
 	}
 	return false;
 }
@@ -444,8 +458,115 @@ static void spawn_sh_c_wait(const char *cmd) {
 	}
 }
 
+/** Return true for the managed runtime flag values accepted by the shell side too. */
+static bool env_flag_enabled(const char *value) {
+	if (!value || !value[0]) {
+		return false;
+	}
+	return !strcasecmp(value, "1") || !strcasecmp(value, "true") || !strcasecmp(value, "yes") ||
+		   !strcasecmp(value, "on");
+}
+
+/** Return the directory that contains managed lifecycle hooks. */
+static const char *managed_hook_dir(void) {
+	const char *dir = getenv("MORPH_SYSTEM_HOOK_DIR");
+	if (dir && dir[0]) {
+		return dir;
+	}
+	return "/etc/morph";
+}
+
+/** Ensure managed shell hooks can expand user-config-relative hook paths. */
+static void ensure_user_config_dir_env(void) {
+	const char *dir = getenv("MORPH_USER_CONFIG_DIR");
+	if (dir && dir[0]) {
+		return;
+	}
+
+	const char *xdg = getenv("XDG_CONFIG_HOME");
+	const char *home = getenv("HOME");
+	char path[PATH_MAX];
+	if (xdg && xdg[0]) {
+		if (snprintf(path, sizeof(path), "%s/morph", xdg) >= (int)sizeof(path)) {
+			wlr_log(WLR_ERROR, "MORPH_USER_CONFIG_DIR path is too long for XDG_CONFIG_HOME");
+			return;
+		}
+	} else if (home && home[0]) {
+		if (snprintf(path, sizeof(path), "%s/.config/morph", home) >= (int)sizeof(path)) {
+			wlr_log(WLR_ERROR, "MORPH_USER_CONFIG_DIR path is too long for HOME");
+			return;
+		}
+	} else {
+		wlr_log(WLR_ERROR, "Cannot derive MORPH_USER_CONFIG_DIR without XDG_CONFIG_HOME or HOME");
+		return;
+	}
+	setenv("MORPH_USER_CONFIG_DIR", path, 1);
+}
+
+/** Export the user hook commands so managed scripts can invoke them in-order. */
+static void export_managed_hook_env(const struct comp_config *cfg) {
+	if (!cfg) {
+		return;
+	}
+	/* Managed mode keeps config parsing inside the compositor, but the shell
+	 * runtime still needs the resolved hook snippets for the user phase. */
+	ensure_user_config_dir_env();
+	if (cfg->hook_startup && cfg->hook_startup[0]) {
+		setenv("MORPH_USER_STARTUP_HOOK_CMD", cfg->hook_startup, 1);
+	} else {
+		unsetenv("MORPH_USER_STARTUP_HOOK_CMD");
+	}
+	if (cfg->hook_shutdown && cfg->hook_shutdown[0]) {
+		setenv("MORPH_USER_SHUTDOWN_HOOK_CMD", cfg->hook_shutdown, 1);
+	} else {
+		unsetenv("MORPH_USER_SHUTDOWN_HOOK_CMD");
+	}
+	if (cfg->hook_reload && cfg->hook_reload[0]) {
+		setenv("MORPH_USER_RELOAD_HOOK_CMD", cfg->hook_reload, 1);
+	} else {
+		unsetenv("MORPH_USER_RELOAD_HOOK_CMD");
+	}
+}
+
+/** Spawn one managed hook file through /bin/sh so execution does not depend on chmod bits. */
+static void spawn_managed_hook(const char *hook_name, bool wait_for_exit) {
+	char hook_path[PATH_MAX];
+	const char *dir = managed_hook_dir();
+	if (snprintf(hook_path, sizeof(hook_path), "%s/%s", dir, hook_name) >= (int)sizeof(hook_path)) {
+		wlr_log(WLR_ERROR, "Managed hook path is too long: %s/%s", dir, hook_name);
+		return;
+	}
+
+	char cmd[PATH_MAX + 32];
+	/* Execute through sh explicitly so packaged hooks and repo-local test hooks
+	 * behave the same even when only the file contents matter. */
+	if (snprintf(cmd, sizeof(cmd), "exec sh \"%s\"", hook_path) >= (int)sizeof(cmd)) {
+		wlr_log(WLR_ERROR, "Managed hook command is too long for %s", hook_path);
+		return;
+	}
+
+	if (wait_for_exit) {
+		spawn_sh_c_wait(cmd);
+	} else {
+		spawn_sh_c(cmd);
+	}
+}
+
+/** Managed launcher/runtime mode keeps the lifecycle frame outside user hooks. */
+static bool managed_hooks_enabled(void) {
+	return env_flag_enabled(getenv("MORPH_MANAGED_HOOKS"));
+}
+
 void comp_config_run_startup(const struct comp_config *cfg) {
 	if (!cfg) {
+		return;
+	}
+	ensure_user_config_dir_env();
+	if (managed_hooks_enabled()) {
+		/* Managed startup wraps the configured user hook so runtime preparation
+		 * happens before user autostarts in every launcher-controlled session. */
+		export_managed_hook_env(cfg);
+		spawn_managed_hook("system_startup.sh", false);
 		return;
 	}
 	spawn_sh_c(cfg->hook_startup);
@@ -455,11 +576,27 @@ void comp_config_run_reload(const struct comp_config *cfg) {
 	if (!cfg) {
 		return;
 	}
+	ensure_user_config_dir_env();
+	if (managed_hooks_enabled()) {
+		/* Reload keeps the current session alive, so the managed layer only
+		 * provides ordering and helper functions around the user reload hook. */
+		export_managed_hook_env(cfg);
+		spawn_managed_hook("system_reload.sh", false);
+		return;
+	}
 	spawn_sh_c(cfg->hook_reload);
 }
 
 void comp_config_run_shutdown(const struct comp_config *cfg) {
 	if (!cfg) {
+		return;
+	}
+	ensure_user_config_dir_env();
+	if (managed_hooks_enabled()) {
+		/* Shutdown stays synchronous so the compositor waits for user teardown
+		 * and managed cleanup before returning control to the launcher. */
+		export_managed_hook_env(cfg);
+		spawn_managed_hook("system_shutdown.sh", true);
 		return;
 	}
 	spawn_sh_c_wait(cfg->hook_shutdown);
@@ -1023,12 +1160,20 @@ bool comp_config_load(const char *path, struct comp_config **cfg_out) {
 	}
 	if (!f) {
 		if (path) {
-			wlr_log(WLR_INFO, "No config at %s (%s), using built-in defaults", path,
-					strerror(errno));
+			wlr_log(WLR_ERROR, "Failed to open config at %s (%s)", path, strerror(errno));
+		} else {
+			wlr_log(WLR_ERROR, "No config path resolved");
 		}
-		load_defaults(cfg);
-		*cfg_out = cfg;
-		return true;
+		if (comp_config_builtin_fallback_enabled()) {
+			/* This opt-in exists for recovery and development cases where a
+			 * session should still come up even though no config file resolved. */
+			wlr_log(WLR_INFO, "Builtin config fallback enabled; using synthesized defaults");
+			load_defaults(cfg);
+			*cfg_out = cfg;
+			return true;
+		}
+		comp_config_free(cfg);
+		return false;
 	}
 
 	struct comp_keybind cur = {0};
@@ -1046,6 +1191,7 @@ bool comp_config_load(const char *path, struct comp_config **cfg_out) {
 	char linebuf[4096];
 	size_t line_no = 0;
 	bool ok = true;
+	bool warned_pointer_compat = false;
 
 	/* Single-pass parser: section switches flush pending block state. */
 	while (fgets(linebuf, sizeof(linebuf), f)) {
@@ -1253,6 +1399,10 @@ bool comp_config_load(const char *path, struct comp_config **cfg_out) {
 			if (!strcasecmp(line, "resize_border_px") || !strcasecmp(line, "resize_border")) {
 				/* Backward compatibility only: parsed to avoid startup failure on legacy
 				 * configs, but the compositor now uses a fixed minimal outside edge zone. */
+				if (!warned_pointer_compat) {
+					wlr_log(WLR_INFO, "%s:%zu: ignoring legacy pointer key '%s'", path, line_no, line);
+					warned_pointer_compat = true;
+				}
 				(void)eq;
 			} else {
 				wlr_log(WLR_ERROR, "%s:%zu: unknown pointer key '%s'", path, line_no, line);

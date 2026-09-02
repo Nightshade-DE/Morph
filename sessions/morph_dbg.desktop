@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Morph (Dev)
+Comment=Morph debug session for local development
+Icon=morph_dbg
+Exec=/usr/bin/morph-session_dbg
+TryExec=/usr/bin/morph-session_dbg
+DesktopNames=Morph
+Keywords=wm;wayland;compositor;wlroots;dev;

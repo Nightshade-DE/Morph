@@ -81,7 +81,7 @@ static void append_hex_u64(char *buf, size_t cap, size_t *off, uint64_t v) {
 static void crash_write_marker(int signo, siginfo_t *info) {
     char msg[256];
     size_t off = 0;
-    append_str(msg, sizeof(msg), &off, "stackcomp fatal signal ");
+    append_str(msg, sizeof(msg), &off, "morph fatal signal ");
     append_u64(msg, sizeof(msg), &off, (uint64_t)signo);
     append_str(msg, sizeof(msg), &off, " pid=");
     append_u64(msg, sizeof(msg), &off, (uint64_t)getpid());
@@ -150,7 +150,7 @@ static bool install_one_signal(int signo) {
  *
  * Closes optional log fd and disables/frees the alternate signal stack.
  */
-void stackcomp_crash_handler_fini(void) {
+void morph_crash_handler_fini(void) {
     if (crash_log_fd >= 0) {
         close(crash_log_fd);
         crash_log_fd = -1;
@@ -169,7 +169,7 @@ void stackcomp_crash_handler_fini(void) {
 /**
  * Initialize crash marker output, alternate stack, and fatal signal hooks.
  */
-bool stackcomp_crash_handler_install(const char *log_path) {
+bool morph_crash_handler_install(const char *log_path) {
     if (log_path && log_path[0]) {
         int fd = open(log_path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0644);
         if (fd < 0) {
@@ -181,14 +181,14 @@ bool stackcomp_crash_handler_install(const char *log_path) {
     /* Bigger-than-default alt stack helps when stack state is already bad. */
     void *sp = malloc(SIGSTKSZ * 4);
     if (!sp) {
-        stackcomp_crash_handler_fini();
+        morph_crash_handler_fini();
         return false;
     }
     crash_altstack.ss_sp = sp;
     crash_altstack.ss_size = SIGSTKSZ * 4;
     crash_altstack.ss_flags = 0;
     if (sigaltstack(&crash_altstack, NULL) != 0) {
-        stackcomp_crash_handler_fini();
+        morph_crash_handler_fini();
         return false;
     }
 
@@ -198,10 +198,10 @@ bool stackcomp_crash_handler_install(const char *log_path) {
         !install_one_signal(SIGILL) ||
         !install_one_signal(SIGFPE) ||
         !install_one_signal(SIGTRAP)) {
-        stackcomp_crash_handler_fini();
+        morph_crash_handler_fini();
         return false;
     }
 
-    (void)atexit(stackcomp_crash_handler_fini);
+    (void)atexit(morph_crash_handler_fini);
     return true;
 }

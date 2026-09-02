@@ -1,10 +1,10 @@
-// Minimal Waybar config for stackcomp (ext-workspace-v1).
+// Minimal Waybar config for morph (ext-workspace-v1).
 // Requires a Waybar build with the ext/workspaces module (not the default wlr/workspaces).
 //
-// Run from another VT or nested session, after stackcomp sets WAYLAND_DISPLAY:
-//   waybar -c "$(pwd)/config/waybar-stackcomp.jsonc" -s "$(pwd)/config/waybar-stackcomp.css"
+// Run from another VT or nested session, after morph sets WAYLAND_DISPLAY:
+//   waybar -c "$(pwd)/config/waybar-morph.jsonc" -s "$(pwd)/config/waybar-morph.css"
 //
-// Workspace names from stackcomp are "1".."9"; stable ids are stackcomp-ws-0 .. stackcomp-ws-9.
+// Workspace names from morph are "1".."9"; stable ids are morph-ws-0 .. morph-ws-9.
 
 {
   "layer": "top",

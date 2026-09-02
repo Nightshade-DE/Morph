@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
+# Nested smoke test for launcher/runtime integration.
+# - Detects current session type (Wayland, X11, or tty fallback via Xvfb).
+# - Starts the dev launcher with controlled env overrides.
+# - Verifies startup/shutdown markers in generated logs.
+
 set -euo pipefail
 
 build_dir="${1:-build}"
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 root_dir="$(cd -- "${script_dir}/.." && pwd)"
-launcher="${root_dir}/testing/stackcomp_run"
-binary="${root_dir}/${build_dir}/stackcomp"
+launcher="${root_dir}/testing/morph-session_dbg"
+binary="${root_dir}/${build_dir}/morph"
 
 if [[ ! -x "${launcher}" ]]; then
   echo "[nested-smoke] launcher not executable: ${launcher}" >&2
@@ -20,9 +25,11 @@ fi
 tmp_dir="$(mktemp -d)"
 log_dir="${tmp_dir}/logs"
 mkdir -p "${log_dir}"
+# Always cleanup temporary smoke artifacts.
 trap 'rm -rf "${tmp_dir}"' EXIT
 
 has_display=0
+# Prefer direct X11 probes to avoid false positives from stale DISPLAY values.
 if [[ -n "${DISPLAY:-}" ]]; then
   if command -v xdpyinfo >/dev/null 2>&1 && DISPLAY="${DISPLAY}" xdpyinfo >/dev/null 2>&1; then
     has_display=1
@@ -32,13 +39,14 @@ if [[ -n "${DISPLAY:-}" ]]; then
 fi
 
 has_wayland=0
+# A Wayland session is considered reachable only with an existing socket.
 if [[ -n "${WAYLAND_DISPLAY:-}" && -n "${XDG_RUNTIME_DIR:-}" ]]; then
   if [[ -S "${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY}" ]]; then
     has_wayland=1
   fi
 fi
 
-run_cmd=(env STACKCOMP_LOG_DIR="${log_dir}" STACKCOMP_DBG=1 STACKCOMP_X11=0)
+run_cmd=(env MORPH_LOG_DIR="${log_dir}" MORPH_DBG=1 MORPH_X11=0)
 session_kind=""
 if [[ "${has_wayland}" -eq 1 ]]; then
   session_kind="wayland"
@@ -58,11 +66,12 @@ else
 fi
 run_cmd+=("${launcher}")
 
+# Launch asynchronously so the script can observe logs and terminate morph deliberately.
 "${run_cmd[@]}" >"${tmp_dir}/runner.out" 2>&1 &
 launcher_pid=$!
 
-startup_log="${log_dir}/stackcomp-nested-startup.log"
-shutdown_log="${log_dir}/stackcomp-nested-shutdown.log"
+startup_log="${log_dir}/morph-nested-startup.log"
+shutdown_log="${log_dir}/morph-nested-shutdown.log"
 
 for _ in {1..50}; do
   if [[ -s "${startup_log}" ]]; then
@@ -78,15 +87,16 @@ if [[ ! -s "${startup_log}" ]]; then
   exit 1
 fi
 
-stackcomp_pid="$(pgrep -P "${launcher_pid}" -x stackcomp | head -n1 || true)"
-if [[ -z "${stackcomp_pid}" ]]; then
-  echo "[nested-smoke] could not find stackcomp child process" >&2
+morph_pid="$(pgrep -P "${launcher_pid}" -x morph | head -n1 || true)"
+if [[ -z "${morph_pid}" ]]; then
+  echo "[nested-smoke] could not find morph child process" >&2
   kill "${launcher_pid}" >/dev/null 2>&1 || true
   wait "${launcher_pid}" >/dev/null 2>&1 || true
   exit 1
 fi
 
-kill -TERM "${stackcomp_pid}" >/dev/null 2>&1 || true
+# Explicitly terminate morph to exercise shutdown handling and log markers.
+kill -TERM "${morph_pid}" >/dev/null 2>&1 || true
 set +e
 wait "${launcher_pid}"
 rc=$?

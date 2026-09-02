@@ -1,37 +1,45 @@
-stackcomp start variants test helper (tty/nested, release/debug, crashdump)
+morph start variants test helper (tty/nested, release/debug, crashdump)
 =============================================================================
 
 Purpose
 -------
 Quick runbook for validating launcher behavior in native and nested sessions,
-including environment overrides, release/debug modes, and crash logging paths.
+including environment overrides, managed hook dispatch, portal runtime,
+release/debug modes, and crash logging paths.
 
 Key paths
 ---------
-Project root: <your_local_repo>/scratch-compositor
-Binary:       <your_local_repo>/scratch-compositor/build/stackcomp
-Launcher:     <your_local_repo>/scratch-compositor/testing/stackcomp_run
-Env file:     <your_local_repo>/scratch-compositor/config/environment
-Default cfg:  <your_local_repo>/scratch-compositor/testing/stackcomp.conf
+Project root: <your_local_repo>/morph
+Release bin:  <your_local_repo>/morph/build/morph
+Debug bin:    <your_local_repo>/morph/build_dbg/morph
+Dev launcher: <your_local_repo>/morph/testing/morph-session_dbg
+Runtime wrapper: /usr/local/bin/morph-session (or your package prefix bindir)
+Env file:     <your_local_repo>/morph/testing/config/environment
+Default cfg:  <your_local_repo>/morph/testing/config/morph.conf
+System startup:  <your_local_repo>/morph/scripts/system_startup.sh
+System reload:   <your_local_repo>/morph/scripts/system_reload.sh
+System shutdown: <your_local_repo>/morph/scripts/system_shutdown.sh
+Portals:      <your_local_repo>/morph/testing/config/portals
+Shell tests:  <your_local_repo>/morph/tests/test_shell_runtime.sh
 
 Runtime log location
 --------------------
 Default runtime state/log base:
-  $XDG_STATE_HOME/stackcomp
+  $XDG_STATE_HOME/morph
 Fallback when XDG_STATE_HOME is unset:
-  ~/.local/state/stackcomp
+  ~/.local/state/morph
 
 Note:
-The `stackcomp` suffix is the fixed project runtime namespace.
-It is independent of launcher install path/name (for example /usr/bin/stackcomp).
+The `morph` suffix is the fixed project runtime namespace.
+It is independent of launcher install path/name (for example /usr/bin/morph).
 
 Typical files:
-  stackcomp.log
-  stackcomp-crash.log
-  stackcomp-startup.log
-  stackcomp-shutdown.log
-  stackcomp-nested-startup.log
-  stackcomp-nested-shutdown.log
+  morph.log
+  morph-crash.log
+  morph-startup.log
+  morph-shutdown.log
+  morph-nested-startup.log
+  morph-nested-shutdown.log
   shutdown_list.nfo
 
 Pre-checks
@@ -40,35 +48,66 @@ Pre-checks
    ninja -C build
 
 2) Verify binary exists:
-   test -x ./build/stackcomp && echo OK || echo MISSING
+   test -x ./build/morph && echo OK || echo MISSING
 
 3) Optional: verify xwayland-satellite is available:
    command -v xwayland-satellite || echo "xwayland-satellite not in PATH"
+
+4) Run the automated test suite once:
+   meson test -C build --print-errorlogs
+
+   This validates the release wrapper path. To validate the debug wrapper
+   explicitly:
+   sh tests/test_shell_runtime.sh --dbg "$PWD"
+
+5) Optional: inspect the current install manifest:
+   meson introspect --installed build
+
+6) Optional: print the sudo commands for a display-manager-visible dev session:
+   ./scripts/dev-install.sh install --print-sudo-help
+
+
+A0) Automated test scope
+------------------------
+The current automated run covers:
+- config parsing (`tests/test_config.c`)
+- shell runtime contracts (`tests/test_shell_runtime.sh`)
+  - `launch`, `launch_nested`, `launch_nokill`
+  - nested startup preparation
+  - native managed portal startup
+  - managed reload helper behavior
+  - managed user hook execution and config hook parsing
+  - portal runtime variable logging
+  - managed shutdown cleanup
+- runtime wrapper resolve-only checks
+  - Meson install manifest coverage for runtime artifacts
+
+Use this runbook for everything that still needs manual session validation.
 
 
 A) Launcher config model
 ------------------------
 The launcher resolves settings in this order:
-1) Caller environment (one-shot VAR=... ./testing/stackcomp_run)
-2) STACKCOMP_ENV_FILE (if set)
-3) config/environment (if present)
-4) Built-in defaults in testing/stackcomp_run
+1) Caller environment (one-shot VAR=... ./testing/morph-session_dbg)
+2) User environment file under `~/.config/morph` / XDG config home
+3) System environment file (`testing/config/environment` in the current dev flow, or `MORPH_ENV_FILE` when set)
+4) Built-in defaults in testing/morph-session_dbg
 
 Note:
-config/environment is override-oriented. Values can stay commented out.
+testing/config/environment is override-oriented. Values can stay commented out.
 
 
-B) Debug mode matrix (STACKCOMP_DBG)
+B) Debug mode matrix (MORPH_DBG)
 ------------------------------------
-STACKCOMP_DBG=0 (release default):
+MORPH_DBG=0 (release default):
 - --log-level error
 - --no-crash-handler
 
-STACKCOMP_DBG=1:
+MORPH_DBG=1:
 - --log-level info
 - crash handler remains off
 
-STACKCOMP_DBG=2:
+MORPH_DBG=2:
 - --log-level debug
 - crash handler on (--crash-log)
 
@@ -77,12 +116,13 @@ C) Native test (TTY / DRM+libinput)
 -----------------------------------
 Run from a VT/TTY (outside another desktop session):
 
-  cd <your_local_repo>/scratch-compositor
-  ./testing/stackcomp_run
+  cd <your_local_repo>/morph
+  ./testing/morph-session_dbg
 
 Check:
 - startup summary contains session mode native-tty
 - WLR_BACKENDS is drm,libinput
+- startup log includes "Native Wayland mode detected. Starting managed session services."
 - run exits cleanly or emits actionable errors
 
 
@@ -90,124 +130,170 @@ D) Nested test (inside X11 or Wayland session)
 ----------------------------------------------
 Run from terminal inside existing desktop session:
 
-  cd <your_local_repo>/scratch-compositor
-  ./testing/stackcomp_run
+  cd <your_local_repo>/morph
+  ./testing/morph-session_dbg
 
 Check:
 - startup summary shows nested-x11 or nested-wayland
 - WLR_BACKENDS is x11 or wayland
+- startup log includes "Nested clients use WAYLAND_DISPLAY=..."
 - nested startup/shutdown logs are used
+
+
+D1) Managed portal startup check (native only)
+----------------------------------------------
+Run a native session, then confirm that startup preparation and portal runtime
+were executed before the user session components:
+
+  LOG_BASE="${XDG_STATE_HOME:-$HOME/.local/state}/morph"
+  rg -n "Native Wayland mode detected|Loaded managed portals file|Started xdg-desktop-portal instances|Set portal variables" "$LOG_BASE"/morph-startup.log
+
+Check:
+- managed portal startup is logged only in native sessions
+- the final portal variable line shows the effective runtime values
+- optional user portal overrides appear via "Loaded user portal override" when used
+- the launcher summary shows which managed hook/config directories were exported
+
+
+D2) Shutdown hook ordering check
+--------------------------------
+Confirm that the optional user hook and the managed cleanup run in the intended
+order after an abnormal compositor exit:
+
+  LOG_BASE="${XDG_STATE_HOME:-$HOME/.local/state}/morph"
+  rg -n "triggering managed shutdown runtime|Running user shutdown hook|No user shutdown hook configured or found|Starting session cleanup|Session cleanup completed" "$LOG_BASE"/morph*-startup.log "$LOG_BASE"/morph*-shutdown.log
+
+Check:
+- the startup log shows the launcher entering managed shutdown orchestration
+- the user shutdown hook is either executed or explicitly reported as absent
+- the managed shutdown runtime still runs afterwards
+
+
+D3) Reload hook behavior check
+------------------------------
+Confirm that config reload enters the managed reload runtime and that user
+reload hooks can restart managed components through the helper layer:
+
+  LOG_BASE="${XDG_STATE_HOME:-$HOME/.local/state}/morph"
+  ./build/morph --reload-config
+  rg -n "Starting managed reload hook|Sourcing user reload hook file|Running user reload hook|Managed reload hook completed|Reloading " "$LOG_BASE"/morph*-startup.log
+
+Check:
+- the reload path enters `scripts/system_reload.sh`
+- the configured reload hook is either sourced from config or reported through the normal fallback log line
+- helper-driven restarts such as `reload sfwbar` are visible in the log
+- helper-driven one-shot starts such as `reload_once mutagen` are visible in the log without forcing a restart
 
 
 E) X11 bridge behavior (xwayland-satellite)
 -------------------------------------------
-Session-aware default when STACKCOMP_X11 is unset:
-- nested (x11/wayland): STACKCOMP_X11 defaults to 0
-- native (drm,libinput): STACKCOMP_X11 defaults to 1
+Default when MORPH_X11 is unset:
+- nested and native sessions: MORPH_X11 defaults to 1
 
 Force disable:
-  STACKCOMP_X11=0 ./testing/stackcomp_run
+  MORPH_X11=0 ./testing/morph-session_dbg
 
 Force enable:
-  STACKCOMP_X11=1 ./testing/stackcomp_run
+  MORPH_X11=1 ./testing/morph-session_dbg
 
 Force X11 display:
-  STACKCOMP_X11_DISPLAY=:12 ./testing/stackcomp_run
+  MORPH_X11_DISPLAY=:12 ./testing/morph-session_dbg
 
 Confirm:
-  rg -n "xwayland-satellite|DISPLAY=|WAYLAND_DISPLAY=|STACKCOMP_X11" "$XDG_STATE_HOME"/stackcomp/*.log
+  rg -n "xwayland-satellite|DISPLAY=|WAYLAND_DISPLAY=|MORPH_X11" "$XDG_STATE_HOME"/morph/*.log
 
 
 F) Config override test
 -----------------------
 Use alternate config without editing launcher:
 
-  STACKCOMP_CFG=/path/to/other.conf ./testing/stackcomp_run
+  MORPH_CONFIG=/path/to/other.conf ./testing/morph-session_dbg
 
 Check startup summary line:
-- "Config file path: ... (override from STACKCOMP_CFG)"
+- "Config file path: ... (override from MORPH_CONFIG)"
 
 
 G) Log directory override test
 ------------------------------
 Route logs to custom path:
 
-  STACKCOMP_LOG_DIR=/tmp/stackcomp-test ./testing/stackcomp_run
+  MORPH_LOG_DIR=/tmp/morph-test ./testing/morph-session_dbg
 
 Check:
-  ls -1 /tmp/stackcomp-test
+  ls -1 /tmp/morph-test
 
 
 H) Direct binary test (bypass launcher)
 ---------------------------------------
 Use when validating compositor flags directly:
 
-  cd <your_local_repo>/scratch-compositor
-  ./build/stackcomp \
-    -c ./testing/stackcomp.conf \
+  cd <your_local_repo>/morph
+  ./build/morph \
+    -c ./testing/config/morph.conf \
     --log-level debug \
-    --log-file ~/.local/state/stackcomp/stackcomp.log \
-    --crash-log ~/.local/state/stackcomp/stackcomp-crash.log
+    --log-file ~/.local/state/morph/morph.log \
+    --crash-log ~/.local/state/morph/morph-crash.log
 
 
 I) Crashdump path test (intentional)
 ------------------------------------
 Use only to validate crash marker output:
 
-  cd <your_local_repo>/scratch-compositor
-  ./build/stackcomp \
-    -c ./testing/stackcomp.conf \
+  cd <your_local_repo>/morph
+  ./build/morph \
+    -c ./testing/config/morph.conf \
     --log-level debug \
-    --log-file ~/.local/state/stackcomp/stackcomp.log \
-    --crash-log ~/.local/state/stackcomp/stackcomp-crash.log \
+    --log-file ~/.local/state/morph/morph.log \
+    --crash-log ~/.local/state/morph/morph-crash.log \
     --crash-test
 
 Expected:
 - process terminates due to deliberate SIGSEGV
-- crash marker appears in stackcomp-crash.log
+- crash marker appears in morph-crash.log
 - startup log reports non-zero exit and summary lines
 
 
 J) Fast triage commands
 -----------------------
 Set once for convenience:
-  LOG_BASE="${XDG_STATE_HOME:-$HOME/.local/state}/stackcomp"
+  LOG_BASE="${XDG_STATE_HOME:-$HOME/.local/state}/morph"
 
 Recent error scan:
   rg -n -i "warn|warning|error|failed|crash|segv|sig" "$LOG_BASE"/*.log
 
 Check startup core lines:
-  rg -n "Selected session mode|WLR_BACKENDS|WLR_WL_SOCKET|STACKCOMP_DBG|STACKCOMP_X11|Config file path" "$LOG_BASE"/stackcomp*-startup.log
+  rg -n "Selected session mode|WLR_BACKENDS|WLR_WL_SOCKET|MORPH_DBG|MORPH_X11|Config file path" "$LOG_BASE"/morph*-startup.log
 
 Check crash markers only:
-  rg -n -i "crash|segv|signal|backtrace" "$LOG_BASE"/stackcomp-crash.log
+  rg -n -i "crash|segv|signal|backtrace" "$LOG_BASE"/morph-crash.log
 
 Also needed: the last 120 lines from startup log.
 
 K) Suggested test sequence
 --------------------------
 1) ninja -C build
-2) STACKCOMP_DBG=0 ./testing/stackcomp_run (baseline release mode)
-3) STACKCOMP_DBG=1 ./testing/stackcomp_run (release-debug logs)
-4) STACKCOMP_DBG=2 ./testing/stackcomp_run (debug + crash handler)
-5) STACKCOMP_CFG=/path/to/alt.conf ./testing/stackcomp_run
-6) Optional nested run with STACKCOMP_X11=0 and then STACKCOMP_X11=1
+2) MORPH_DBG=0 ./testing/morph-session_dbg (baseline release mode)
+3) MORPH_DBG=1 ./testing/morph-session_dbg (release-debug logs)
+4) MORPH_DBG=2 ./testing/morph-session_dbg (debug + crash handler)
+5) MORPH_CONFIG=/path/to/alt.conf ./testing/morph-session_dbg
+6) Optional nested run with MORPH_X11=0 and then MORPH_X11=1
+7) Optional no-config recovery run with MORPH_ALLOW_BUILTIN_FALLBACK=1
 
 
 L) 3-minute smoke check (before push)
 -------------------------------------
 Run once:
-  LOG_BASE="${XDG_STATE_HOME:-$HOME/.local/state}/stackcomp"
+  LOG_BASE="${XDG_STATE_HOME:-$HOME/.local/state}/morph"
 
 1) Verify invalid env fallback + warning logs:
-  STACKCOMP_DBG=abc STACKCOMP_X11=maybe STACKCOMP_X11_DISPLAY=foo ./testing/stackcomp_run
-  rg -n "invalid STACKCOMP_DBG|invalid STACKCOMP_X11|invalid STACKCOMP_X11_DISPLAY" "$LOG_BASE"/stackcomp*-startup.log
+  MORPH_DBG=abc MORPH_X11=maybe MORPH_X11_DISPLAY=foo ./testing/morph-session_dbg
+  rg -n "invalid MORPH_DBG|invalid MORPH_X11|invalid MORPH_X11_DISPLAY" "$LOG_BASE"/morph*-startup.log
 
 2) Verify shutdown list is runtime state under XDG state path:
   ls -l "$LOG_BASE"/shutdown_list.nfo
 
 3) Verify shutdown hook path/result:
-  rg -n "Triggering session shutdown script|session cleanup completed|No programs registered to kill|Performing dynamic session cleanup" "$LOG_BASE"/stackcomp*-startup.log "$LOG_BASE"/stackcomp*-shutdown.log
+  rg -n "triggering managed shutdown runtime|Session cleanup completed|No programs registered to kill|Performing dynamic session cleanup|Stopping xdg-desktop-portal processes" "$LOG_BASE"/morph*-startup.log "$LOG_BASE"/morph*-shutdown.log
 
 4) Fast failure scan if start failed:
   rg -n -i "error|failed|crash|segv|signal|backtrace" "$LOG_BASE"/*.log
@@ -218,74 +304,10 @@ M) Grep/RG quick filters for crash triage
 If you prefer grep, replace rg -n with grep -nE.
 
 Launcher decision lines:
-  rg -n "Environment source|Selected session mode|X11 probe details|WLR_BACKENDS|WLR_WL_SOCKET|STACKCOMP_DBG|STACKCOMP_X11|STACKCOMP_X11_DISPLAY|Config file path|Shutdown list file" "$LOG_BASE"/stackcomp*-startup.log
+  rg -n "Environment source|Selected session mode|X11 probe details|WLR_BACKENDS|WLR_WL_SOCKET|MORPH_DBG|MORPH_X11|MORPH_X11_DISPLAY|Config file path|Shutdown list file" "$LOG_BASE"/morph*-startup.log
 
 xwayland-satellite and display related:
   rg -n "xwayland-satellite|DISPLAY=|WAYLAND_DISPLAY=|No free X display" "$LOG_BASE"/*.log
 
 Shutdown registration/readback hints:
-  rg -n "registered for automatic shutdown|Performing dynamic session cleanup|Sent SIGTERM|forcing SIGKILL|session cleanup completed" "$LOG_BASE"/stackcomp*-startup.log "$LOG_BASE"/stackcomp*-shutdown.log
-
-Bitte jetzt testen
-
-App mit CSD-Titelleiste starten (z. B. GTK/Qt/Java).
-Maximize, Minimize, Close über Buttons testen.
-Danach minimiertes Fenster über Panel/Taskbar wieder aktivieren.
-Wenn noch ein Edge Case bleibt (z. B. weiterhin zu große Maximized-Geometrie bei Reopen), dann schick mir bitte direkt nach einem reproduzierten Lauf diese Ausgaben:
-
-LOG_BASE="${XDG_STATE_HOME:-$HOME/.local/state}/stackcomp"
-rg -n -i "request_maximize|request_minimize|request_fullscreen|maximized|fullscreen|arrange|layer_workarea|geometry|configure" "$LOG_BASE"/stackcomp*.log
-tail -n 250 "$LOG_BASE"/stackcomp*-startup.log
-tail -n 250 "$LOG_BASE"/stackcomp.log
-
-Dann gehe ich auf den zweiten Fix-Schritt für die Restore/Maximize-Geometrie.
-
-LOG_BASE="${XDG_STATE_HOME:-$HOME/.local/state}/stackcomp"
-tail -n 200 "$LOG_BASE"/stackcomp-startup.log
-tail -n 120 "$LOG_BASE"/stackcomp-crash.log
-
-
-N) Manuelle Resize-Checkliste (Kanten/Ecken)
---------------------------------------------
-Diese kurze Checkliste ist fuer den neuen Maus-Resize-Pfad gedacht.
-
-1) Basis-Start
-  - stackcomp normal starten
-  - 2-3 Fenster oeffnen (z. B. Terminal, Browser, LibreOffice)
-  - Erwartung: stabiler Betrieb ohne Hangs
-
-2) Resize-Cursor (8 Zonen)
-  - Maus langsam an: links, rechts, oben, unten,
-    oben-links, oben-rechts, unten-links, unten-rechts
-  - Erwartung: Cursorform passt zur jeweiligen Kante/Ecke
-
-3) Resize-Drag
-  - An jeder Kante/Ecke: Klick+Hold+Ziehen
-  - Erwartung: Fenstergroesse folgt direkt, ohne Spruenge
-
-4) Min-Groesse / Clamp
-  - Fenster sehr klein ziehen
-  - Erwartung: kein negativer/instabiler Zustand, weiterhin bedienbar
-
-5) Move-Regression
-  - Fensterbewegung wie gewohnt testen
-  - Erwartung: Move unveraendert funktionsfaehig
-
-6) Layout-spezifisch pruefen
-  - In tile/scroll: normale tiled Fenster nicht frei edge-resizable (by design)
-  - Tile-float Fenster sollen edge-resizable bleiben
-
-7) Maximize/Normalize + Resize
-  - Maximieren, normalisieren, danach wieder manuell resizen
-  - Erwartung: kein 0,0-Flicker, Geometrie bleibt plausibel
-
-8) Konfig-Wert pruefen
-  - derzeit entfällt (Resize-Rand ist fest im Compositor definiert)
-
-9) Kurzer Regression-Check
-  - scripts/test-nested-smoke.sh build
-  - Erwartung: erfolgreicher Durchlauf
-
-LOG_BASE="${XDG_STATE_HOME:-$HOME/.local/state}/stackcomp"
-rg -n "grab=|resize|cursor|request_set_cursor|button" "$LOG_BASE"/stackcomp*.log > rg_grab.txt
-tail -n 200 "$LOG_BASE"/stackcomp-startup.log > tail_startup.txt
+  rg -n "registered for automatic shutdown|Performing dynamic session cleanup|Sent SIGTERM|Forcing SIGKILL|Session cleanup completed" "$LOG_BASE"/morph*-startup.log "$LOG_BASE"/morph*-shutdown.log

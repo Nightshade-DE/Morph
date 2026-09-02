@@ -1,0 +1,65 @@
+#!/bin/sh
+# Managed portal startup for native sessions.
+# Keep this in a separate file so user startup hooks can stay focused on
+# session components instead of compositor runtime plumbing.
+# Runtime order:
+# 1. This managed base file is loaded first.
+# 2. An optional user override at ~/.config/morph/portals is loaded after it.
+# The override may replace morph_start_portals() when portal behavior needs
+# to change, without forcing every user to carry portal startup code in startup.sh.
+################################################################################
+
+morph_start_portals() {
+    if morph_session_is_nested; then
+        log_startup INFO "Skipping portal startup in nested mode."
+        return 0
+    fi
+
+    # Kill stale instances first so a previous crashed session cannot leave the
+    # broker bound to an old backend combination.
+    pkill -x "xdg-desktop-portal-wlr|xdg-desktop-portal-gtk|xdg-desktop-portal-hyprland|xdg-desktop-portal-gnome|xdg-desktop-portal-kde|xdg-desktop-portal-lxqt|xdg-desktop-portal" 2>/dev/null
+    log_startup INFO "Killed stale xdg-desktop-portal instances."
+
+    # Portal backends needed by morph
+    # ==============================================================================
+    # wlroots backend for screencast, screenshot, and monitor sharing.
+    launch_nokill "$MORPH_PORTAL_LIBEXEC_DIR/xdg-desktop-portal-wlr"
+    # GTK fallback for file chooser, settings, and mixed GTK/Qt app support.
+    launch_nokill "$MORPH_PORTAL_LIBEXEC_DIR/xdg-desktop-portal-gtk"
+
+    # Optional desktop-specific portal backends.
+    # Enable only ONE of these when the matching desktop stack is installed.
+    #launch_nokill "$MORPH_PORTAL_LIBEXEC_DIR/xdg-desktop-portal-hyprland"
+    #launch_nokill "$MORPH_PORTAL_LIBEXEC_DIR/xdg-desktop-portal-gnome"
+    #launch_nokill "$MORPH_PORTAL_LIBEXEC_DIR/xdg-desktop-portal-kde"
+    #launch_nokill "$MORPH_PORTAL_LIBEXEC_DIR/xdg-desktop-portal-lxqt"
+
+    # Start the broker after its backend portals had a short head start.
+    sleep 1
+    launch_nokill "$MORPH_PORTAL_LIBEXEC_DIR/xdg-desktop-portal"
+    log_startup INFO "Started xdg-desktop-portal instances."
+
+    # Keep toolkit defaults close to portal startup so the runtime contract
+    # stays visible in one place.
+    #
+    # These exports are generally useful for the default wlroots + GTK setup.
+    # They do not force a specific desktop portal backend.
+    export GTK_USE_PORTAL=1
+    export QT_QPA_PLATFORM="wayland;xcb"
+    export GDK_BACKEND="wayland,x11"
+
+    # Optional desktop identity hints for desktop-specific backends.
+    # Uncomment only when you explicitly enable the matching portal backend above.
+    #export XDG_CURRENT_DESKTOP="Hyprland"
+    #export XDG_CURRENT_DESKTOP="GNOME"
+    #export XDG_CURRENT_DESKTOP="KDE"
+    #export XDG_CURRENT_DESKTOP="LXQt"
+
+    # Log the effective runtime values after all optional portal backends and
+    # exports have been resolved, so commented-in overrides show up as-is.
+    portal_runtime_note="Set portal variables (QT_QPA_PLATFORM=${QT_QPA_PLATFORM:-unset}, "
+    portal_runtime_note="${portal_runtime_note}GDK_BACKEND=${GDK_BACKEND:-unset}, "
+    portal_runtime_note="${portal_runtime_note}GTK_USE_PORTAL=${GTK_USE_PORTAL:-unset}, "
+    portal_runtime_note="${portal_runtime_note}XDG_CURRENT_DESKTOP=${XDG_CURRENT_DESKTOP:-unset})."
+    log_startup INFO "$portal_runtime_note"
+}

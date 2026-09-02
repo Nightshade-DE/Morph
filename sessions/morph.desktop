@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Morph
+Comment= A hybrid stacking, tiling and scrolling wayland compositor
+Icon=morph
+Exec=morph-session
+TryExec=morph-session
+DesktopNames=Morph
+Keywords=wm;wayland;compositor;wlroots;

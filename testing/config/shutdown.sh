@@ -1,5 +1,5 @@
 #!/bin/sh
-# Main morph shutdown hook.
+# Development morph shutdown hook.
 # Keep this file focused on user-facing shutdown content:
 # - optional user cleanup
 # - optional user-managed service shutdown

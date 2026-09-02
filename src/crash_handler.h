@@ -17,11 +17,11 @@
  *   installed successfully.
  * - false when initialization failed (for example open/malloc/sigaltstack).
  */
-bool stackcomp_crash_handler_install(const char *log_path);
+bool morph_crash_handler_install(const char *log_path);
 
 /**
  * Release resources owned by the crash handler in normal shutdown paths.
  *
  * Safe to call multiple times; subsequent calls become no-ops.
  */
-void stackcomp_crash_handler_fini(void);
+void morph_crash_handler_fini(void);

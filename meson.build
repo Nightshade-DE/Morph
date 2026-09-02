@@ -1,11 +1,13 @@
 project(
-  'stackcomp',
+  'morph',
   'c',
   version: '0.1.0',
   default_options: [
     'c_std=c11',
     'warning_level=2',
     'werror=false',
+    'prefix=/usr',
+    'sysconfdir=/etc',
   ],
 )
 
@@ -15,12 +17,26 @@ add_project_arguments('-DWLR_USE_UNSTABLE', language: 'c')
 cc = meson.get_compiler('c')
 m_dep = cc.find_library('m', required: false)
 
-wlroots = dependency('wlroots-0.19')
+wlroots = dependency(
+  ['wlroots-0.19', 'wlroots-0.20', 'wlroots-0.22', 'wlroots-git', 'wlroots'],
+  version: '>=0.19'
+)
+# Needed for compositor-side touchpad defaults such as tap-to-click.
+libinput = dependency('libinput')
 pixman = dependency('pixman-1')
 wayland_server = dependency('wayland-server')
 xkbcommon = dependency('xkbcommon')
 wayland_protocols = dependency('wayland-protocols', version: '>=1.32')
 wayland_scanner = find_program('wayland-scanner')
+sh_prog = find_program('sh')
+
+morph_runtime_dir = get_option('sysconfdir') / 'morph'
+morph_doc_dir = get_option('datadir') / 'doc' / 'morph'
+morph_bindir = '/usr/bin'
+morph_runtime_dir = '/etc/morph'
+morph_sessions_dir = '/usr/share/wayland-sessions'
+morph_doc_dir = '/usr/share/doc/morph'
+morph_icons_dir = '/usr/share/icons/hicolor/scalable/apps'
 
 xdg_shell_xml = wayland_protocols.get_variable('pkgdatadir') / 'stable/xdg-shell/xdg-shell.xml'
 xdg_shell_server_h = custom_target(
@@ -75,7 +91,7 @@ pointer_constraints_server_h = custom_target(
 )
 
 executable(
-  'stackcomp',
+  'morph',
   'src/crash_handler.c',
   'src/main.c',
   'src/config.c',
@@ -87,21 +103,89 @@ executable(
   tablet_v2_server_h,
   tablet_v2_private_c,
   pointer_constraints_server_h,
-  dependencies: [wlroots, pixman, wayland_server, xkbcommon, m_dep],
+  dependencies: [wlroots, libinput, pixman, wayland_server, xkbcommon, m_dep],
   install: true,
+  install_dir: morph_bindir,
 )
 
 config_test = executable(
-  'stackcomp-test-config',
+  'morph-test-config',
   'tests/test_config.c',
   'src/config.c',
+  xdg_shell_server_h,
   dependencies: [wlroots, pixman, wayland_server, xkbcommon, m_dep],
   include_directories: include_directories('src'),
 )
 
 test('config', config_test)
+test(
+  'shell-runtime',
+  sh_prog,
+  args: [files('tests/test_shell_runtime.sh'), meson.project_source_root()],
+)
 
 install_data(
-  files('data/stackcomp.desktop'),
-  install_dir: get_option('datadir') / 'wayland-sessions',
+  files(
+    'config/morph.conf',
+    'config/environment',
+    'config/portals',
+  ),
+  install_dir: morph_runtime_dir,
+)
+
+install_data(
+  files(
+    'config/startup.sh',
+    'config/reload.sh',
+    'config/shutdown.sh',
+    'scripts/shell-helpers.sh',
+    'scripts/system_startup.sh',
+    'scripts/system_shutdown.sh',
+    'scripts/system_reload.sh',
+  ),
+  install_dir: morph_runtime_dir,
+  install_mode: 'rwxr-xr-x',
+)
+
+install_data(
+  files('scripts/morph-session'),
+  install_dir: morph_bindir,
+  rename: 'morph-session',
+  install_mode: 'rwxr-xr-x',
+)
+
+install_data(
+  files('sessions/morph.desktop'),
+  install_dir: morph_sessions_dir,
+)
+
+install_data(
+  files(
+    'assets/icons/morph.svg',
+    'assets/icons/morph_dbg.svg',
+  ),
+  install_dir: morph_icons_dir,
+)
+
+install_data(
+  files('README.md'),
+  install_dir: morph_doc_dir,
+)
+
+install_data(
+  files(
+    'docs/OVERVIEW.md',
+    'docs/CLI.md',
+    'docs/CONFIG.md',
+    'docs/COMPOSITOR.md',
+    'docs/CRASHING.md',
+    'docs/DEVFAQ.md',
+    'docs/PROTOCOLS.md',
+    'docs/TESTING.md',
+    'docs/ENVIRONMENT.md',
+    'docs/LAUNCHER.md',
+    'docs/morph.conf.example',
+    'testing/test-howto_start-variants.nfo',
+  ),
+  install_dir: morph_doc_dir / 'docs',
 )

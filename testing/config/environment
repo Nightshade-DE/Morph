@@ -1,8 +1,8 @@
 # Morph runtime environment defaults
-# This file is sourced by testing/morph-session_dbg and morph-session.
+# This development environment file is sourced by testing/morph-session_dbg and can be linked into ~/.config/morph by scripts/dev-install.sh.
 #
 # Keep values commented unless you want to override launcher defaults.
-# Effective defaults live in testing/morph-session_dbg.
+# Effective launcher defaults still live in testing/morph-session_dbg.
 #
 # Modes:
 #   MORPH_DBG=0 -> normal release run (error-level logging, crash handler off)
@@ -17,31 +17,20 @@
 #MORPH_ALLOW_BUILTIN_FALLBACK=1
 
 # Debug mode selector (0,1,2)
-MORPH_DBG=0
+MORPH_DBG=2
 
 # Optional XDG lifecycle debug logs in compositor (0=off, 1=on)
-MORPH_DEBUG_XDG=0
-# Optional per-commit XDG logs; requires MORPH_DEBUG_XDG=1 and is very noisy.
-#MORPH_DEBUG_XDG_COMMITS=0
-# Optional pointer focus enter/leave diagnostics for layer-shell hover bugs.
-#MORPH_DEBUG_POINTER_FOCUS=0
-# Optional layer-shell geometry diagnostics around panel hover/focus transitions.
-#MORPH_DEBUG_LAYER_HIT=0
-# Optional key event diagnostics for keybind debugging.
-#MORPH_LOG_KEYS=0
-# Optional legacy X11 bridge resize rate override. Lower values reduce flicker;
-# higher values feel more responsive but can make old toolkits fall behind.
-#MORPH_BRIDGE_RESIZE_HZ=17
+MORPH_DEBUG_XDG=1
 
 # wlroots/log verbosity helpers
-WAYLAND_DEBUG=0
-WLR_LOGTS=0
+WAYLAND_DEBUG=1
+WLR_LOGTS=1
 
 # Local wlroots runtime fallback (for systems without distro wlroots-0.19).
 # Prefer system runtime libraries when available.
 # Uncomment when morph-session runs from a display manager and cannot resolve
 # libwlroots-0.19.so without shell-provided LD_LIBRARY_PATH.
-#export LD_LIBRARY_PATH="$HOME/.local/lib/x86_64-linux-gnu:$HOME/.local/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+#LD_LIBRARY_PATH="$HOME/.local/lib/x86_64-linux-gnu:$HOME/.local/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
 # Java/X11 compatibility helpers
 _JAVA_AWT_WM_NONREPARENTING=1
@@ -56,7 +45,7 @@ XKB_DEFAULT_MODEL=pc105
 XKB_DEFAULT_OPTIONS=grp:alt_shift_toggle
 
 # X11 bridge controls (xwayland-satellite in compositor)
-# Empty MORPH_X11 means session-aware default in launcher.
+# Empty MORPH_X11 uses the enabled default in the launcher.
 #MORPH_X11=0
 #MORPH_X11_DISPLAY=:12
 

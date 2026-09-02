@@ -1,6 +1,6 @@
-# Crash Handling in stackcomp
+# Crash Handling in Morph
 
-stackcomp uses a minimal crash handler that is safe in signal context.
+**Morph** uses a minimal crash handler that is safe in signal context.
 
 ## Design goals
 
@@ -13,7 +13,7 @@ The handler catches fatal signals (`SIGSEGV`, `SIGABRT`, `SIGBUS`, `SIGILL`, `SI
 ## Runtime options
 
 - `--crash-log /path/to/file.log`: append crash markers to a file.
-- `--no-crash-handler`: disable stackcomp crash handler installation.
+- `--no-crash-handler`: disable **Morph** crash handler installation.
 - `--crash-test`: trigger a deliberate `SIGSEGV` after startup to verify the crash handler path.
 
 ## Recommended debug workflow
@@ -27,33 +27,33 @@ ulimit -c
 
 Expected output of `ulimit -c`: `unlimited`.
 
-Note: `ulimit` is shell-local. If you start stackcomp from another shell/terminal, set it there as well.
+Note: `ulimit` is shell-local. If you start **Morph** from another shell/terminal, set it there as well.
 
-2. Run stackcomp with debug symbols and optional crash marker file:
+2. Run **Morph** with debug symbols and optional crash marker file:
 
 ```bash
-./build/stackcomp --log-level debug --crash-log /tmp/stackcomp-crash.log
+./build/morph --log-level debug --crash-log /tmp/morph-crash.log
 
 # Optional: deterministic crash-handler test (intentional crash)
-./build/stackcomp --log-level debug --crash-log /tmp/stackcomp-crash.log --crash-test
+./build/morph --log-level debug --crash-log /tmp/morph-crash.log --crash-test
 ```
 
 3. After a crash, inspect recent core dumps:
 
 ```bash
-coredumpctl list stackcomp
+coredumpctl list morph
 ```
 
 If this still prints `No coredumps found`:
 
 - verify again in the same shell: `ulimit -c` (must be `unlimited` or > 0)
-- use `coredumpctl -q list stackcomp` to hide unrelated permission hints
+- use `coredumpctl -q list morph` to hide unrelated permission hints
 - confirm systemd-coredump is active on the host (`systemctl is-active systemd-coredump.socket`)
 
 4. Open in gdb and collect a full backtrace:
 
 ```bash
-$ coredumpctl gdb stackcomp
+$ coredumpctl gdb morph
 # in gdb:
 (gdb) bt full
 ```
@@ -77,7 +77,7 @@ Interpretation:
 
 - `#1` (`crash_signal_handler`) is expected after a fatal signal and is not the original trigger site.
 - `#4` (`raise`) performs signal delivery.
-- `#5` is the relevant call site in stackcomp source where the signal was triggered.
+- `#5` is the relevant call site in **Morph** source where the signal was triggered.
 
 To get the code around line 5327 where the crash happens we have to switch to frame #5:
 ```bash
@@ -114,4 +114,4 @@ Optional helpers for real-world crashes:
 
 Functions like `malloc`, `fprintf`, `backtrace_symbols`, `popen`, `system`, and many C++/X11 helpers are not async-signal-safe. Running them in a fatal signal handler can deadlock or crash recursively.
 
-stackcomp therefore keeps the signal handler minimal and performs rich analysis outside the crashing context via core dumps.
+**Morph** therefore keeps the signal handler minimal and performs rich analysis outside the crashing context via core dumps.

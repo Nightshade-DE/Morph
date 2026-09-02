@@ -245,7 +245,7 @@ static bool send_session_initial(struct comp_ext_workspace_session *sess, struct
 		ext_workspace_manager_v1_send_workspace(man, wsr);
 		/* Stable IDs keep client-side workspace widgets ordered across reconnects. */
 		char idbuf[40];
-		snprintf(idbuf, sizeof(idbuf), "stackcomp-ws-%d", i);
+		snprintf(idbuf, sizeof(idbuf), "morph-ws-%d", i);
 		ext_workspace_handle_v1_send_id(wsr, idbuf);
 		char namebuf[16];
 		snprintf(namebuf, sizeof(namebuf), "%d", i + 1);

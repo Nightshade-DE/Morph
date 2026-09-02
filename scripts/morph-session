@@ -1,0 +1,498 @@
+#!/bin/sh
+# Production morph session wrapper.
+# - Resolves environment, config, logs, and session mode for real sessions.
+# - Keeps the managed startup/shutdown/reload frame active around user hooks.
+# - Starts the installed morph binary instead of the repo-local build.
+################################################################################
+
+MORPH_SYSTEM_HOOK_DIR_DEFAULT="/etc/morph"
+MORPH_SYSTEM_CONFIG_DIR_DEFAULT="/etc/morph"
+MORPH_SYSTEM_CONFIG_FILE_DEFAULT="/etc/morph/morph.conf"
+MORPH_BIN_DEFAULT="/usr/bin/morph"
+MORPH_USER_CONFIG_DIR_DEFAULT="${XDG_CONFIG_HOME:-$HOME/.config}/morph"
+
+# Capture one caller-provided value so sourced environment files cannot silently
+# override the highest-priority layer.
+morph_capture_caller_override() {
+    var_name="$1"
+    if eval "[ \"\${$var_name+x}\" ]"; then
+        eval "MORPH_CALLER_HAS_$var_name=1"
+        eval "MORPH_CALLER_VALUE_$var_name=\${$var_name}"
+    else
+        eval "MORPH_CALLER_HAS_$var_name=0"
+    fi
+}
+
+# Restore one caller-provided value after lower-priority environment files were sourced.
+morph_restore_caller_override() {
+    var_name="$1"
+    if eval "[ \"\${MORPH_CALLER_HAS_$var_name:-0}\" = 1 ]"; then
+        eval "$var_name=\${MORPH_CALLER_VALUE_$var_name}"
+        export "${var_name?}"
+    fi
+}
+
+
+# Load environment layers.
+# ==============================================================================
+# Preserve caller overrides before lower-priority environment files are sourced.
+for var_name in \
+    WAYLAND_DEBUG WLR_LOGTS _JAVA_AWT_WM_NONREPARENTING WMNAME \
+    LD_LIBRARY_PATH \
+    MORPH_X11 MORPH_X11_DISPLAY MORPH_DBG MORPH_CONFIG \
+    MORPH_LOG_DIR MORPH_SYSTEM_HOOK_DIR MORPH_SYSTEM_CONFIG_DIR \
+    MORPH_SYSTEM_CONFIG_FILE MORPH_BIN MORPH_ALLOW_BUILTIN_FALLBACK \
+    MORPH_PORTAL_LIBEXEC_DIR MORPH_DEBUG_XDG MORPH_DEBUG_XDG_COMMITS MORPH_DEBUG_POINTER_FOCUS MORPH_DEBUG_LAYER_HIT \
+    MORPH_BRIDGE_RESIZE_HZ MORPH_LOG_KEYS \
+    XKB_DEFAULT_LAYOUT XKB_DEFAULT_MODEL XKB_DEFAULT_VARIANT XKB_DEFAULT_OPTIONS
+do
+    morph_capture_caller_override "$var_name"
+done
+
+SYSTEM_CONFIG_DIR_BOOTSTRAP="${MORPH_SYSTEM_CONFIG_DIR:-$MORPH_SYSTEM_CONFIG_DIR_DEFAULT}"
+SYSTEM_ENV_FILE_DEFAULT="$SYSTEM_CONFIG_DIR_BOOTSTRAP/environment"
+SYSTEM_ENV_FILE="${MORPH_ENV_FILE:-$SYSTEM_ENV_FILE_DEFAULT}"
+USER_ENV_FILE="$MORPH_USER_CONFIG_DIR_DEFAULT/environment"
+ENV_FILE_NOTE="defaults-only (no user or system environment file found)"
+
+if [ -f "${SYSTEM_ENV_FILE}" ]; then
+    . "${SYSTEM_ENV_FILE?}"
+    ENV_FILE_NOTE="loaded system environment: $SYSTEM_ENV_FILE"
+fi
+
+if [ -f "${USER_ENV_FILE}" ]; then
+    . "${USER_ENV_FILE?}"
+    if [ "$ENV_FILE_NOTE" = "defaults-only (no user or system environment file found)" ]; then
+        ENV_FILE_NOTE="loaded user environment: $USER_ENV_FILE"
+    else
+        ENV_FILE_NOTE="$ENV_FILE_NOTE; loaded user environment: $USER_ENV_FILE"
+    fi
+fi
+
+for var_name in \
+    WAYLAND_DEBUG WLR_LOGTS _JAVA_AWT_WM_NONREPARENTING WMNAME \
+    LD_LIBRARY_PATH \
+    MORPH_X11 MORPH_X11_DISPLAY MORPH_DBG MORPH_CONFIG \
+    MORPH_LOG_DIR MORPH_SYSTEM_HOOK_DIR MORPH_SYSTEM_CONFIG_DIR \
+    MORPH_SYSTEM_CONFIG_FILE MORPH_BIN MORPH_ALLOW_BUILTIN_FALLBACK \
+    MORPH_PORTAL_LIBEXEC_DIR MORPH_DEBUG_XDG MORPH_DEBUG_XDG_COMMITS MORPH_DEBUG_POINTER_FOCUS MORPH_DEBUG_LAYER_HIT \
+    MORPH_BRIDGE_RESIZE_HZ MORPH_LOG_KEYS \
+    XKB_DEFAULT_LAYOUT XKB_DEFAULT_MODEL XKB_DEFAULT_VARIANT XKB_DEFAULT_OPTIONS
+do
+    morph_restore_caller_override "$var_name"
+done
+
+MORPH_LD_LIBRARY_PATH_NOTE=""
+if [ -z "${LD_LIBRARY_PATH:-}" ]; then
+    # Runtime login-manager sessions often miss user shell library exports.
+    # Build a minimal fallback from common local install locations.
+    local_lib_paths=""
+    for candidate in "$HOME/.local/lib/x86_64-linux-gnu" "$HOME/.local/lib"; do
+        if [ -d "$candidate" ]; then
+            if [ -z "$local_lib_paths" ]; then
+                local_lib_paths="$candidate"
+            else
+                local_lib_paths="$local_lib_paths:$candidate"
+            fi
+        fi
+    done
+
+    if [ -n "$local_lib_paths" ]; then
+        LD_LIBRARY_PATH="$local_lib_paths"
+        export LD_LIBRARY_PATH
+        MORPH_LD_LIBRARY_PATH_NOTE="LD_LIBRARY_PATH was empty and was auto-set to '$LD_LIBRARY_PATH' for local wlroots runtime lookup. Prefer system wlroots runtime packages when available. For an explicit setup, uncomment the LD_LIBRARY_PATH block in /etc/morph/environment or ~/.config/morph/environment."
+    fi
+fi
+
+# Launcher defaults (single source of truth for release behavior).
+WAYLAND_DEBUG_DEFAULT=0
+WLR_LOGTS_DEFAULT=0
+JAVA_NONREPARENT_DEFAULT=1
+WMNAME_DEFAULT=LG3D
+MORPH_X11_DEFAULT=1
+MORPH_X11_DISPLAY_DEFAULT=
+MORPH_DBG_DEFAULT=0
+MORPH_LOG_DIR_DEFAULT=
+
+# Apply defaults only when unset by caller or environment file.
+if [ -z "${WAYLAND_DEBUG+x}" ]; then WAYLAND_DEBUG="$WAYLAND_DEBUG_DEFAULT"; fi
+if [ -z "${WLR_LOGTS+x}" ]; then WLR_LOGTS="$WLR_LOGTS_DEFAULT"; fi
+if [ -z "${_JAVA_AWT_WM_NONREPARENTING+x}" ]; then _JAVA_AWT_WM_NONREPARENTING="$JAVA_NONREPARENT_DEFAULT"; fi
+if [ -z "${WMNAME+x}" ]; then WMNAME="$WMNAME_DEFAULT"; fi
+if [ -z "${MORPH_X11+x}" ]; then MORPH_X11="$MORPH_X11_DEFAULT"; fi
+if [ -z "${MORPH_X11_DISPLAY+x}" ]; then MORPH_X11_DISPLAY="$MORPH_X11_DISPLAY_DEFAULT"; fi
+if [ -z "${MORPH_DBG+x}" ]; then MORPH_DBG="$MORPH_DBG_DEFAULT"; fi
+if [ -z "${MORPH_LOG_DIR+x}" ]; then MORPH_LOG_DIR="$MORPH_LOG_DIR_DEFAULT"; fi
+if [ -z "${MORPH_SYSTEM_HOOK_DIR+x}" ]; then MORPH_SYSTEM_HOOK_DIR="$MORPH_SYSTEM_HOOK_DIR_DEFAULT"; fi
+if [ -z "${MORPH_SYSTEM_CONFIG_DIR+x}" ]; then MORPH_SYSTEM_CONFIG_DIR="$MORPH_SYSTEM_CONFIG_DIR_DEFAULT"; fi
+if [ -z "${MORPH_SYSTEM_CONFIG_FILE+x}" ]; then MORPH_SYSTEM_CONFIG_FILE="$MORPH_SYSTEM_CONFIG_FILE_DEFAULT"; fi
+if [ -z "${MORPH_BIN+x}" ]; then MORPH_BIN="$MORPH_BIN_DEFAULT"; fi
+
+MORPH_DBG_NOTE=""
+case "$MORPH_DBG" in
+    0|1|2) ;;
+    *)
+    MORPH_DBG_NOTE="invalid MORPH_DBG='$MORPH_DBG' (using default $MORPH_DBG_DEFAULT)"
+    MORPH_DBG="$MORPH_DBG_DEFAULT"
+        ;;
+esac
+
+export WAYLAND_DEBUG
+export WLR_LOGTS
+export _JAVA_AWT_WM_NONREPARENTING
+export WMNAME
+# Tell the compositor to keep the lifecycle frame around the configured hooks
+# instead of executing those user snippets as the first entrypoint directly.
+export MORPH_MANAGED_HOOKS=1
+export MORPH_SYSTEM_HOOK_DIR
+export MORPH_SYSTEM_CONFIG_DIR
+export MORPH_USER_CONFIG_DIR="$MORPH_USER_CONFIG_DIR_DEFAULT"
+export MORPH_BIN
+export MORPH_HELPER_LIB="$MORPH_SYSTEM_HOOK_DIR/shell-helpers.sh"
+
+# Environment files are sourced by this shell, so plain assignments there would
+# otherwise stay shell-local. Export the resolved runtime linker path explicitly.
+if [ -n "${LD_LIBRARY_PATH+x}" ]; then export LD_LIBRARY_PATH; fi
+
+# Forward optional XKB overrides from environment file/caller into morph.
+# Keep unset values untouched so libxkbcommon can use system defaults.
+if [ -n "${XKB_DEFAULT_LAYOUT+x}" ]; then export XKB_DEFAULT_LAYOUT; fi
+if [ -n "${XKB_DEFAULT_MODEL+x}" ]; then export XKB_DEFAULT_MODEL; fi
+if [ -n "${XKB_DEFAULT_VARIANT+x}" ]; then export XKB_DEFAULT_VARIANT; fi
+if [ -n "${XKB_DEFAULT_OPTIONS+x}" ]; then export XKB_DEFAULT_OPTIONS; fi
+
+# Optional compositor XDG lifecycle debug flag.
+if [ -n "${MORPH_DEBUG_XDG+x}" ]; then export MORPH_DEBUG_XDG; fi
+if [ -n "${MORPH_DEBUG_XDG_COMMITS+x}" ]; then export MORPH_DEBUG_XDG_COMMITS; fi
+if [ -n "${MORPH_DEBUG_POINTER_FOCUS+x}" ]; then export MORPH_DEBUG_POINTER_FOCUS; fi
+if [ -n "${MORPH_DEBUG_LAYER_HIT+x}" ]; then export MORPH_DEBUG_LAYER_HIT; fi
+if [ -n "${MORPH_BRIDGE_RESIZE_HZ+x}" ]; then export MORPH_BRIDGE_RESIZE_HZ; fi
+if [ -n "${MORPH_LOG_KEYS+x}" ]; then export MORPH_LOG_KEYS; fi
+if [ -n "${MORPH_ALLOW_BUILTIN_FALLBACK+x}" ]; then export MORPH_ALLOW_BUILTIN_FALLBACK; fi
+if [ -n "${MORPH_PORTAL_LIBEXEC_DIR+x}" ]; then export MORPH_PORTAL_LIBEXEC_DIR; fi
+
+
+# Load shared helper functions before first use.
+# ==============================================================================
+. "${MORPH_HELPER_LIB?}"
+
+
+# Path Definitions and Log Setup
+# ==============================================================================
+# Use XDG state path by default for runtime logs.
+CONFIG_NOTE=""
+USER_CONFIG_FILE="$MORPH_USER_CONFIG_DIR/morph.conf"
+
+if [ -n "${MORPH_CONFIG:-}" ]; then
+    if [ ! -r "$MORPH_CONFIG" ]; then
+        printf 'Configured morph config is not readable: %s\n' "$MORPH_CONFIG" >&2
+        exit 1
+    fi
+    CONFIG_FILE="$MORPH_CONFIG"
+    if [ -z "$CONFIG_NOTE" ]; then
+        CONFIG_NOTE="override from MORPH_CONFIG"
+    fi
+elif [ -r "$USER_CONFIG_FILE" ]; then
+    CONFIG_FILE="$USER_CONFIG_FILE"
+    CONFIG_NOTE="user config fallback"
+elif [ -r "$MORPH_SYSTEM_CONFIG_FILE" ]; then
+    CONFIG_FILE="$MORPH_SYSTEM_CONFIG_FILE"
+    CONFIG_NOTE="system config fallback"
+else
+    if morph_env_flag_is_enabled "${MORPH_ALLOW_BUILTIN_FALLBACK:-0}"; then
+        # Reaching this branch means every higher-priority config source has
+        # already failed to resolve: explicit env overrides, user config, and
+        # system config were all checked above. The empty CONFIG_FILE does not
+        # ignore a resolved path; it only signals "let the binary apply its
+        # final builtin fallback step" for the no-config case.
+        CONFIG_FILE=""
+        CONFIG_NOTE="builtin fallback (no readable config file)"
+    else
+        printf 'No readable morph config found in user or system locations.\n' >&2
+        exit 1
+    fi
+fi
+if [ -n "$CONFIG_FILE" ]; then
+    export MORPH_CONFIG="$CONFIG_FILE"
+else
+    unset MORPH_CONFIG
+fi
+
+# Export the user-facing hook commands from the active config so the managed
+# shutdown fallback can still honor them if the compositor dies before its own
+# shutdown hook path is reached.
+MORPH_USER_STARTUP_HOOK_CMD="$(morph_config_hook_from_file startup "$CONFIG_FILE")"
+MORPH_USER_SHUTDOWN_HOOK_CMD="$(morph_config_hook_from_file shutdown "$CONFIG_FILE")"
+MORPH_USER_RELOAD_HOOK_CMD="$(morph_config_hook_from_file reload "$CONFIG_FILE")"
+# Exporting empty values is intentional here: the managed scripts then fall
+# back to the XDG hook locations instead of guessing from unrelated paths.
+export MORPH_USER_STARTUP_HOOK_CMD
+export MORPH_USER_SHUTDOWN_HOOK_CMD
+export MORPH_USER_RELOAD_HOOK_CMD
+
+STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
+STATE_DIR="$STATE_HOME/morph"
+LOG_DIR="${MORPH_LOG_DIR:-$STATE_HOME/morph}"
+LOG_FILE="$LOG_DIR/morph.log"
+CRASH_LOG_FILE="$LOG_DIR/morph-crash.log"
+SESSION_MODE_NOTE=""
+X11_PROBE_NOTE=""
+STARTUP_LOG_BASELINE=0
+CORE_LOG_BASELINE=0
+CRASH_LOG_BASELINE=0
+CHOSEN_X11_DISPLAY=""
+
+# Create runtime directories before any log or state file is touched.
+mkdir -p "$STATE_DIR"
+mkdir -p "$LOG_DIR"
+
+
+# Current session detection and mode setup
+# ==============================================================================
+if choose_reachable_x11_display; then
+    # X11 session: register compositor as "wayland-nested".
+    export DISPLAY="$CHOSEN_X11_DISPLAY"
+    export WLR_BACKENDS=x11
+    export WLR_WL_SOCKET="wayland-nested"
+    export MORPH_SESSION_MODE=nested
+    SESSION_MODE_NOTE="nested-x11"
+    echo "Starting in Nested-Mode under X11 (DISPLAY=$CHOSEN_X11_DISPLAY)..."
+elif [ -n "${WAYLAND_DISPLAY:-}" ]; then
+    # Wayland session: use "wayland-nested" to avoid socket collisions.
+    export WLR_BACKENDS=wayland
+    export WLR_WL_SOCKET="wayland-nested"
+    export MORPH_SESSION_MODE=nested
+    SESSION_MODE_NOTE="nested-wayland"
+    echo "Starting in Nested-Mode under Wayland..."
+else
+    # Console (TTY) or unreachable nested displays: run native backend stack.
+    if [ -n "${DISPLAY:-}" ]; then
+        echo "DISPLAY=$DISPLAY is unreachable and no WAYLAND_DISPLAY found; falling back to native backend."
+    fi
+    unset DISPLAY
+    export WLR_BACKENDS=drm,libinput
+    unset WLR_WL_SOCKET
+    export MORPH_SESSION_MODE=native
+    SESSION_MODE_NOTE="native-tty"
+fi
+
+# Validate xwayland-satellite behavior.
+# ==============================================================================
+# Keep X11 applications available in every session type by default. Nested
+# sessions are also a normal user-facing runtime and must not silently lose X11
+# compatibility merely because the compositor itself uses a nested backend.
+MORPH_X11_NOTE=""
+if [ -z "$MORPH_X11" ]; then
+    MORPH_X11="$MORPH_X11_DEFAULT"
+else
+    case "$MORPH_X11" in
+        0|1) ;;
+        *)
+            MORPH_X11_NOTE="invalid MORPH_X11='$MORPH_X11' (using default $MORPH_X11_DEFAULT)"
+            MORPH_X11="$MORPH_X11_DEFAULT"
+            ;;
+    esac
+fi
+export MORPH_X11
+
+MORPH_X11_DISPLAY_NOTE=""
+if [ -n "$MORPH_X11_DISPLAY" ]; then
+    case "$MORPH_X11_DISPLAY" in
+        :[0-9]*)
+            if [ "$MORPH_X11_DISPLAY" = ":" ]; then
+                MORPH_X11_DISPLAY_NOTE="invalid MORPH_X11_DISPLAY=':' (using auto :2..:99)"
+                MORPH_X11_DISPLAY=""
+            fi
+            ;;
+        *)
+            MORPH_X11_DISPLAY_NOTE="invalid MORPH_X11_DISPLAY='$MORPH_X11_DISPLAY' (using auto :2..:99)"
+            MORPH_X11_DISPLAY=""
+            ;;
+    esac
+fi
+
+if [ -n "$MORPH_X11_DISPLAY" ]; then
+    export MORPH_X11_DISPLAY
+fi
+
+# Log settings
+# ==============================================================================
+MORPH_LOG_LEVEL="error"
+MORPH_ENABLE_CRASH_HANDLER=0
+case "$MORPH_DBG" in
+    1)
+        MORPH_LOG_LEVEL="info"
+        ;;
+    2)
+        MORPH_LOG_LEVEL="debug"
+        MORPH_ENABLE_CRASH_HANDLER=1
+        ;;
+esac
+export MORPH_LOG_LEVEL
+export MORPH_ENABLE_CRASH_HANDLER
+
+# Use separate logs in nested mode to avoid overwriting main logs.
+if [ "$WLR_BACKENDS" = "x11" ] || [ "$WLR_BACKENDS" = "wayland" ]; then
+    export MORPH_STARTUP_LOG_FILE="$LOG_DIR/morph-nested-startup.log"
+    export MORPH_SHUTDOWN_LOG_FILE="$LOG_DIR/morph-nested-shutdown.log"
+else
+    export MORPH_STARTUP_LOG_FILE="$LOG_DIR/morph-startup.log"
+    export MORPH_SHUTDOWN_LOG_FILE="$LOG_DIR/morph-shutdown.log"
+fi
+
+# Point shared logging helpers at the startup log before the first message.
+export CURRENT_LOG_FILE="$MORPH_STARTUP_LOG_FILE"
+
+# Capture per-file baselines so the error summary only scans this run.
+STARTUP_LOG_BASELINE=$(line_count_or_zero "$MORPH_STARTUP_LOG_FILE")
+CORE_LOG_BASELINE=$(line_count_or_zero "$LOG_FILE")
+CRASH_LOG_BASELINE=$(line_count_or_zero "$CRASH_LOG_FILE")
+export STARTUP_LOG_BASELINE
+export CORE_LOG_BASELINE
+export CRASH_LOG_BASELINE
+
+
+# Dynamic program list shared by startup.sh and system_shutdown.sh for shutdown cleanup.
+# ==============================================================================
+export MORPH_SHUTDOWN_LIST="$STATE_DIR/shutdown_list.nfo"
+# Recreate the shutdown tracker on every run so stale entries never survive
+# into the next session.
+: > "$MORPH_SHUTDOWN_LIST"
+log_startup INFO "============================= N E W  S T A R T ================================"
+log_startup INFO "Cleared shutdown list file."
+
+
+# Startup Summary
+# ==============================================================================
+log_summary() {
+    label="$1"
+    value="$2"
+    log_startup INFO "$(printf '%-33s%s' "$label:" "$value")"
+}
+
+log_summary_if_set() {
+    label="$1"
+    value="$2"
+    if [ -n "$value" ]; then
+        log_summary "$label" "$value"
+    fi
+}
+
+log_startup INFO "Runtime summary:"
+log_startup INFO "--------------------------------------------------------------------------------"
+log_summary "Environment source" "$ENV_FILE_NOTE"
+log_summary "Selected session mode" "$SESSION_MODE_NOTE"
+log_summary "X11 probe details" "$X11_PROBE_NOTE"
+log_summary "Config file path" "$CONFIG_FILE ($CONFIG_NOTE)"
+log_summary "Builtin fallback enabled" "${MORPH_ALLOW_BUILTIN_FALLBACK:-0}"
+log_summary "Managed hooks enabled" "$MORPH_MANAGED_HOOKS"
+log_summary "Managed system hook directory" "$MORPH_SYSTEM_HOOK_DIR"
+log_summary "Managed system config directory" "$MORPH_SYSTEM_CONFIG_DIR"
+log_summary "User config directory" "$MORPH_USER_CONFIG_DIR"
+log_summary "Compositor binary" "$MORPH_BIN"
+log_summary "WLR_BACKENDS" "$WLR_BACKENDS..."
+log_summary "WLR_WL_SOCKET" "${WLR_WL_SOCKET:-unset}"
+log_summary "LD_LIBRARY_PATH" "${LD_LIBRARY_PATH:-unset}"
+log_summary "MORPH_DBG" "$MORPH_DBG"
+log_summary "MORPH_LOG_LEVEL" "$MORPH_LOG_LEVEL"
+log_summary "Crash handler enabled" "$MORPH_ENABLE_CRASH_HANDLER"
+log_summary "MORPH_X11" "$MORPH_X11"
+log_summary "MORPH_X11_DISPLAY" "${MORPH_X11_DISPLAY:-auto (:2..:99)}"
+log_summary "Log file path" "$LOG_FILE"
+log_summary "Crash log file path" "$CRASH_LOG_FILE"
+log_summary "Startup log file" "$MORPH_STARTUP_LOG_FILE"
+log_summary "Shutdown log file" "$MORPH_SHUTDOWN_LOG_FILE"
+log_summary "Shutdown list file" "$MORPH_SHUTDOWN_LIST"
+
+if [ -n "$MORPH_DBG_NOTE" ]; then
+    log_startup WARN "$MORPH_DBG_NOTE"
+fi
+if [ -n "$MORPH_X11_NOTE" ]; then
+    log_startup WARN "$MORPH_X11_NOTE"
+fi
+if [ -n "$MORPH_X11_DISPLAY_NOTE" ]; then
+    log_startup WARN "$MORPH_X11_DISPLAY_NOTE"
+fi
+if [ -n "$MORPH_LD_LIBRARY_PATH_NOTE" ]; then
+    log_startup WARN "$MORPH_LD_LIBRARY_PATH_NOTE"
+fi
+
+if [ "$MORPH_DBG" -ge 1 ]; then
+    log_startup INFO "Verbose environment details:"
+    log_startup INFO "--------------------------------------------------------------------------------"
+    log_summary "WAYLAND_DEBUG" "$WAYLAND_DEBUG"
+    log_summary "WLR_LOGTS" "$WLR_LOGTS"
+    log_summary "_JAVA_AWT_WM_NONREPARENTING" "$_JAVA_AWT_WM_NONREPARENTING"
+    log_summary "WMNAME" "$WMNAME"
+    log_summary_if_set "MORPH_DEBUG_XDG" "${MORPH_DEBUG_XDG:-}"
+    log_summary_if_set "MORPH_DEBUG_XDG_COMMITS" "${MORPH_DEBUG_XDG_COMMITS:-}"
+    log_summary_if_set "MORPH_DEBUG_POINTER_FOCUS" "${MORPH_DEBUG_POINTER_FOCUS:-}"
+    log_summary_if_set "MORPH_DEBUG_LAYER_HIT" "${MORPH_DEBUG_LAYER_HIT:-}"
+    log_summary_if_set "MORPH_BRIDGE_RESIZE_HZ" "${MORPH_BRIDGE_RESIZE_HZ:-}"
+    log_summary_if_set "MORPH_LOG_KEYS" "${MORPH_LOG_KEYS:-}"
+    log_summary_if_set "MORPH_PORTAL_LIBEXEC_DIR" "${MORPH_PORTAL_LIBEXEC_DIR:-}"
+fi
+
+if morph_env_flag_is_enabled "${MORPH_RESOLVE_ONLY:-0}"; then
+    # Resolve-only mode is used by tests and diagnostics to verify layer
+    # precedence without starting a compositor instance.
+    log_startup INFO "Resolve-only mode requested; skipping compositor start after priority checks."
+    exit 0
+fi
+
+
+# Compositor start and monitoring
+# ==============================================================================
+# Run the compositor without exec so the launcher can inspect the exit status
+# and decide whether managed shutdown cleanup is needed.
+if [ "$MORPH_ENABLE_CRASH_HANDLER" -eq 1 ]; then
+    CRASH_HANDLER_NOTE="enabled (--crash-log)"
+else
+    CRASH_HANDLER_NOTE="disabled (--no-crash-handler)"
+fi
+log_startup INFO "Execution mode: log-level=$MORPH_LOG_LEVEL, crash-handler=$CRASH_HANDLER_NOTE"
+log_startup INFO "Capturing compositor stdout/stderr into startup log: $MORPH_STARTUP_LOG_FILE"
+run_morph_with_capture
+EXIT_CODE=$?
+
+# Check exit status for crash detection.
+if [ $EXIT_CODE -eq 0 ]; then
+    log_startup INFO "Compositor exited normally with exit code 0."
+else
+    log_startup ERROR "Compositor crashed or exited with an error. Exit code: $EXIT_CODE."
+    if [ "$EXIT_CODE" -eq 137 ]; then
+        log_startup ERROR "Exit 137 means SIGKILL (often debugger stop, external kill, or OOM killer)."
+    fi
+    if [ "$MORPH_ENABLE_CRASH_HANDLER" -eq 1 ]; then
+        if [ -s "$CRASH_LOG_FILE" ]; then
+            log_startup ERROR "Check the detailed crash log at: $CRASH_LOG_FILE."
+        elif [ -f "$CRASH_LOG_FILE" ]; then
+            log_startup INFO "No crash marker recorded in crash log (file exists but is empty): $CRASH_LOG_FILE"
+        else
+            log_startup INFO "No crash marker recorded (crash log file not found): $CRASH_LOG_FILE"
+        fi
+    else
+        log_startup INFO "Crash handler is disabled (--no-crash-handler); no crash marker file is expected."
+    fi
+    dump_recent_error_summary
+fi
+
+
+# Only trigger managed shutdown handling on abnormal exit. A clean exit lets
+# the compositor's managed hook dispatch run the normal shutdown sequence.
+# ==============================================================================
+if [ "$EXIT_CODE" -ne 0 ]; then
+    system_shutdown_hook="$MORPH_SYSTEM_HOOK_DIR/system_shutdown.sh"
+
+    # Normal exits already ran through the compositor-managed shutdown hook.
+    # This path exists only for crashes and other early aborts.
+    log_startup INFO "Compositor exited with rc=$EXIT_CODE; triggering managed shutdown runtime: $system_shutdown_hook"
+
+    if [ -f "$system_shutdown_hook" ]; then
+        sh "$system_shutdown_hook"
+    else
+        log_startup ERROR "Managed shutdown runtime not found at the expected path: $system_shutdown_hook"
+    fi
+else
+    log_startup INFO "Compositor exited cleanly; relying on compositor-managed shutdown hooks."
+fi

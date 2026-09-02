@@ -103,7 +103,7 @@ struct comp_config {
 	char *hook_startup;
 	char *hook_shutdown;
 	char *hook_reload;
-	/** Tile/scroll scene position easing (see `[layout_anim]` in CONFIG.md). */
+	/** Tile/scroll scene position easing (see `[layout_anim]` in docs/CONFIG.md). */
 	bool layout_anim_enabled;
 	double layout_anim_lambda;
 	double layout_anim_epsilon;
@@ -113,6 +113,9 @@ struct comp_config {
 	(WLR_MODIFIER_SHIFT | WLR_MODIFIER_CTRL | WLR_MODIFIER_ALT | WLR_MODIFIER_LOGO)
 
 bool comp_config_default_path(char *out, size_t out_len);
+
+/** Return whether the caller explicitly enabled synthesized config defaults. */
+bool comp_config_builtin_fallback_enabled(void);
 
 bool comp_config_load(const char *path, struct comp_config **cfg_out);
 

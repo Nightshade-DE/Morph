@@ -1,4 +1,4 @@
-# DEV FAQ (stackcomp)
+# Morph Dev FAQ
 
 Practical troubleshooting notes for local development and debugging.
 
@@ -36,8 +36,8 @@ Recommended test pattern:
 
 ```bash
 rm -f /tmp/sc-quiet.log /tmp/sc-debug.log
-env -u WAYLAND_DISPLAY ./build/stackcomp --quiet --log-file /tmp/sc-quiet.log
-env -u WAYLAND_DISPLAY ./build/stackcomp --verbose --log-file /tmp/sc-debug.log
+env -u WAYLAND_DISPLAY ./build/morph --quiet --log-file /tmp/sc-quiet.log
+env -u WAYLAND_DISPLAY ./build/morph --verbose --log-file /tmp/sc-debug.log
 ```
 
 ## 3) Why did `--help` / `-h` fail before?
@@ -55,8 +55,8 @@ Current behavior:
 Use a fresh file to compare runs:
 
 ```bash
-rm -f /tmp/stackcomp-run.log
-env -u WAYLAND_DISPLAY ./build/stackcomp --log-level debug --log-file /tmp/stackcomp-run.log
+rm -f /tmp/morph-run.log
+env -u WAYLAND_DISPLAY ./build/morph --log-level debug --log-file /tmp/morph-run.log
 ```
 
 ## 5) Quick sanity checks before deeper debugging
@@ -75,9 +75,9 @@ Expected:
 ## 6) IPC quick-check commands
 
 ```bash
-echo 'layout tile' | nc -U "$XDG_RUNTIME_DIR/stackcomp-ipc.sock"
-echo 'workspace next' | nc -U "$XDG_RUNTIME_DIR/stackcomp-ipc.sock"
-echo 'reload config' | nc -U "$XDG_RUNTIME_DIR/stackcomp-ipc.sock"
+echo 'layout tile' | nc -U "$XDG_RUNTIME_DIR/morph-ipc.sock"
+echo 'workspace next' | nc -U "$XDG_RUNTIME_DIR/morph-ipc.sock"
+echo 'reload config' | nc -U "$XDG_RUNTIME_DIR/morph-ipc.sock"
 ```
 
 If these fail, verify:
@@ -124,13 +124,13 @@ This can still appear during an otherwise clean nested shutdown and is currently
 
 Context:
 
-- stackcomp exits cleanly after the host X11 window is closed.
+- **Morph** exits cleanly after the host X11 window is closed.
 - During teardown, Xwayland can still attempt one final write while its Wayland connection is already closing.
 - This produces the `(EE) ... Broken pipe` line even though the compositor process already terminates correctly.
 
 Interpretation:
 
-- If stackcomp exits and no assertions/crashes follow, this message is expected and not treated as a functional failure.
+- If **Morph** exits and no assertions/crashes follow, this message is expected and not treated as a functional failure.
 - Investigate only if the message appears repeatedly during normal runtime or is followed by new fatal errors.
 
 ## 10) Nested shutdown logs `(EE) failed to read Wayland events: Broken pipe`
@@ -145,30 +145,55 @@ Context:
 
 Interpretation:
 
-- If stackcomp exits with code 0 and no follow-up fatal signal/assertion appears, this line is considered harmless.
+- If **Morph** exits with code 0 and no follow-up fatal signal/assertion appears, this line is considered harmless.
 - Investigate further only if it occurs repeatedly during normal runtime or is followed by new crashes.
 
-## 11) Why does yEd / some Java apps only show a close button?
+## 11) Runtime shutdown logs `Io error: Broken pipe` followed by a Rust panic
 
-Some Java applications under native Wayland stackcomp sessions (for example yEd) only expose a close button in the titlebar, while minimize/maximize are missing.
+This can appear when **xwayland-satellite** exits after **Morph** has already torn down the Wayland side of the session.
+
+Example:
+
+```text
+Io error: Broken pipe (os error 32)
+
+thread 'main' panicked at /usr/src/packages/BUILD/src/server/mod.rs:799:79:
+called `Option::unwrap()` on a `None` value
+```
+
+Context:
+
+- The message comes from **xwayland-satellite**, not from **Morph**'s C logger.
+- It is usually emitted during logout/quit after Xwayland clients or portals lose their Wayland connection.
+- In the startup log this can appear shortly before `Compositor exited normally with exit code 0`.
+
+Interpretation:
+
+- If **Morph** exits with code 0, this is currently treated as xwayland-satellite shutdown noise.
+- Investigate further if the panic appears during normal runtime, prevents logout, or is followed by a non-zero **Morph** exit.
+- Use `RUST_BACKTRACE=1` only when debugging xwayland-satellite itself; it is not useful for Morph C crashdumps.
+
+## 12) Why does yEd / some Java apps only show a close button?
+
+Some Java applications under native Wayland **Morph** sessions (for example yEd) only expose a close button in the titlebar, while minimize/maximize are missing.
 
 Observed behavior:
 
-- the app starts normally under stackcomp
+- the app starts normally under **Morph**
 - the window closes correctly
 - minimize/maximize buttons are not offered by the client titlebar
 
 Cause:
 
 - the client negotiates xdg-shell version 3
-- stackcomp can only advertise `wm_capabilities` starting at xdg-shell version 5
+- **Morph** can only advertise `wm_capabilities` starting at xdg-shell version 5
 - with version 3, the compositor cannot legally signal maximize/minimize support
 
 Current status:
 
 - this cannot be fixed cleanly in the existing client-side decoration path alone
 - a real fix would require server-side decorations (SSD) with compositor-drawn window controls
-- stackcomp does not currently implement SSD decoration
+- **Morph** does not currently implement SSD decoration
 
 In short:
 

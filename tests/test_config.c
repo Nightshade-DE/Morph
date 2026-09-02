@@ -112,7 +112,7 @@ bool server_init(struct comp_server *server)
  */
 static bool write_temp_file(const char *content, char *out_path, size_t out_len)
 {
-    char tmpl[] = "/tmp/stackcomp-config-test-XXXXXX";
+    char tmpl[] = "/tmp/morph-config-test-XXXXXX";
     int fd = mkstemp(tmpl);
     if (fd < 0)
     {
@@ -235,6 +235,8 @@ static int test_valid_config_parse(void)
  */
 static int test_invalid_tile_grid_command(void)
 {
+    fprintf(stderr, "NOTE: the following config parser ERROR messages are expected; this test intentionally feeds invalid config.\n");
+
     const char *cfg_text =
         "[bind]\n"
         "mods = Super\n"
@@ -262,22 +264,67 @@ static int test_invalid_tile_grid_command(void)
 }
 
 /**
- * Missing config file should not hard-fail startup.
- *
- * Loader is expected to synthesize defaults when the file is absent.
+ * Missing config file should hard-fail when an explicit path was requested.
  */
-static int test_missing_config_falls_back_to_defaults(void)
+static int test_missing_config_fails(void)
 {
+    fprintf(stderr, "NOTE: the following missing-config ERROR message is expected; this test verifies hard-fail behavior.\n");
+
     struct comp_config *cfg = NULL;
-    bool ok = comp_config_load("/tmp/stackcomp-config-this-file-does-not-exist", &cfg);
+    unsetenv("MORPH_ALLOW_BUILTIN_FALLBACK");
+    bool ok = comp_config_load("/tmp/morph-config-this-file-does-not-exist", &cfg);
+    if (ok)
+    {
+        fprintf(stderr, "missing config should fail instead of falling back silently\n");
+        comp_config_free(cfg);
+        return 1;
+    }
+    return 0;
+}
+
+/**
+ * Missing config file may fall back to builtin defaults when explicitly enabled.
+ */
+static int test_missing_config_can_use_builtin_fallback(void)
+{
+    fprintf(stderr, "NOTE: the following missing-config ERROR message is expected before builtin fallback is accepted.\n");
+
+    struct comp_config *cfg = NULL;
+    setenv("MORPH_ALLOW_BUILTIN_FALLBACK", "1", 1);
+    bool ok = comp_config_load("/tmp/morph-config-this-file-does-not-exist", &cfg);
+    unsetenv("MORPH_ALLOW_BUILTIN_FALLBACK");
     if (!ok || !cfg)
     {
-        fprintf(stderr, "missing config should fall back to defaults\n");
+        fprintf(stderr, "missing config should use builtin fallback when enabled\n");
         return 1;
     }
     if (cfg->n_binds == 0)
     {
-        fprintf(stderr, "default config should provide built-in binds\n");
+        fprintf(stderr, "builtin fallback should provide default binds\n");
+        comp_config_free(cfg);
+        return 1;
+    }
+    comp_config_free(cfg);
+    return 0;
+}
+
+/** Missing default config path must use the same explicit fallback as a missing file path. */
+static int test_unresolved_config_path_can_use_builtin_fallback(void)
+{
+    struct comp_config *cfg = NULL;
+    setenv("MORPH_ALLOW_BUILTIN_FALLBACK", "1", 1);
+    bool ok = comp_config_load(NULL, &cfg);
+    unsetenv("MORPH_ALLOW_BUILTIN_FALLBACK");
+    if (!ok || !cfg || cfg->n_binds != 4 ||
+        cfg->binds[0].mods != WLR_MODIFIER_LOGO || cfg->binds[0].keysym != XKB_KEY_Return ||
+        cfg->binds[0].action != COMP_KEYBIND_EXEC || strcmp(cfg->binds[0].command, "${TERMINAL:-foot}") != 0 ||
+        cfg->binds[1].mods != (WLR_MODIFIER_LOGO | WLR_MODIFIER_SHIFT) || cfg->binds[1].keysym != XKB_KEY_Q ||
+        cfg->binds[1].action != COMP_KEYBIND_CLOSE || cfg->binds[2].mods != WLR_MODIFIER_LOGO ||
+        cfg->binds[2].keysym != XKB_KEY_Escape || cfg->binds[2].action != COMP_KEYBIND_QUIT ||
+        cfg->binds[3].mods != WLR_MODIFIER_LOGO || cfg->binds[3].keysym != XKB_KEY_t ||
+        cfg->binds[3].action != COMP_KEYBIND_LAYOUT_TOGGLE)
+    {
+        fprintf(stderr, "unresolved config path should use all builtin default binds when enabled\n");
         comp_config_free(cfg);
         return 1;
     }
@@ -296,7 +343,15 @@ int main(void)
     {
         return 1;
     }
-    if (test_missing_config_falls_back_to_defaults() != 0)
+    if (test_missing_config_fails() != 0)
+    {
+        return 1;
+    }
+    if (test_missing_config_can_use_builtin_fallback() != 0)
+    {
+        return 1;
+    }
+    if (test_unresolved_config_path_can_use_builtin_fallback() != 0)
     {
         return 1;
     }
