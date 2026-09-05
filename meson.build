@@ -94,6 +94,7 @@ executable(
   'morph',
   'src/crash_handler.c',
   'src/main.c',
+  'src/keyboard.c',
   'src/config.c',
   'src/ext_workspace.c',
   xdg_shell_server_h,
@@ -118,6 +119,14 @@ config_test = executable(
 )
 
 test('config', config_test)
+keyboard_test = executable(
+  'morph-test-keyboard',
+  'tests/test_keyboard.c',
+  'src/keyboard.c',
+  dependencies: [wlroots, pixman, wayland_server, xkbcommon],
+  include_directories: include_directories('src'),
+)
+test('keyboard', keyboard_test)
 test(
   'shell-runtime',
   sh_prog,

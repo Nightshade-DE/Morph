@@ -22,7 +22,6 @@
 #include <xdg-shell-protocol.h>
 #include <wlr/backend.h>
 #include <wlr/backend/libinput.h>
-#include <wlr/interfaces/wlr_keyboard.h>
 #include <wlr/render/allocator.h>
 #include <wlr/render/wlr_renderer.h>
 #include <wlr/types/wlr_compositor.h>
@@ -61,6 +60,7 @@
 #include "config.h"
 #include "crash_handler.h"
 #include "ext_workspace.h"
+#include "keyboard.h"
 #include "server.h"
 
 /**
@@ -2804,15 +2804,7 @@ static void focus_toplevel(struct comp_server *server, struct comp_toplevel *top
 		return;
 	}
 	struct wlr_seat *seat = server->seat;
-	struct wlr_keyboard *kbd = wlr_seat_get_keyboard(seat);
-	if (kbd)
-	{
-		wlr_seat_keyboard_notify_enter(seat, surf, kbd->keycodes, kbd->num_keycodes, &kbd->modifiers);
-	}
-	else
-	{
-		wlr_seat_keyboard_notify_enter(seat, surf, NULL, 0, NULL);
-	}
+	comp_keyboard_notify_enter(seat, surf);
 }
 
 /** Drop compositor-managed move/resize state so the next pointer event re-evaluates ownership cleanly. */
@@ -4645,101 +4637,11 @@ static void keyboard_handle_destroy(struct wl_listener *listener, void *data)
 {
 	(void)data;
 	struct comp_keyboard *kbd = wl_container_of(listener, kbd, destroy);
+	wlr_keyboard_from_input_device(kbd->dev)->data = NULL;
 	wl_list_remove(&kbd->destroy.link);
 	wl_list_remove(&kbd->key.link);
 	wl_list_remove(&kbd->modifiers.link);
 	free(kbd);
-}
-
-/* wlr_keyboard_notify_key() re-emits keyboard->events.key; ignore nested calls. */
-static int keyboard_key_dispatch_depth;
-
-/**
- * Keyboard key callback.
- *
- * Resolves keysym/modifier state for binding matching and forwards events to
- * focused clients. A recursion guard avoids re-entry via wlroots callbacks.
- */
-static void keyboard_handle_key(struct wl_listener *listener, void *data)
-{
-	if (keyboard_key_dispatch_depth > 0)
-	{
-		return;
-	}
-	keyboard_key_dispatch_depth++;
-
-	struct comp_keyboard *kbd = wl_container_of(listener, kbd, key);
-	/* During shutdown wlroots may emit late key events; avoid seat access then. */
-	if (!kbd->server || !kbd->server->seat || kbd->server->display_terminate_requested)
-	{
-		keyboard_key_dispatch_depth--;
-		return;
-	}
-	struct wlr_keyboard_key_event *event = data;
-	struct wlr_keyboard *wlr_kbd = wlr_keyboard_from_input_device(kbd->dev);
-
-	uint32_t mods_filtered = 0;
-	xkb_keysym_t sym = XKB_KEY_NoSymbol;
-	if (wlr_kbd->xkb_state && wlr_kbd->keymap)
-	{
-		mods_filtered = wlr_keyboard_get_modifiers(wlr_kbd) & COMP_BIND_MOD_FILTER;
-		/* wlroots uses Linux evdev codes; XKB uses evdev + 8. Never call xkb with a
-		 * keycode outside this keymap's range (libxkbcommon can fault otherwise). */
-		xkb_keycode_t xkbc = (xkb_keycode_t)((uint64_t)event->keycode + 8u);
-		xkb_keycode_t lo = xkb_keymap_min_keycode(wlr_kbd->keymap);
-		xkb_keycode_t hi = xkb_keymap_max_keycode(wlr_kbd->keymap);
-		if (xkbc >= lo && xkbc <= hi)
-		{
-			sym = xkb_state_key_get_one_sym(wlr_kbd->xkb_state, xkbc);
-		}
-	}
-
-	const bool pressed = event->state == WL_KEYBOARD_KEY_STATE_PRESSED;
-	if (pressed)
-	{
-		const char *kdbg = getenv("MORPH_LOG_KEYS");
-		if (kdbg && kdbg[0] && strcmp(kdbg, "0") != 0 && sym != XKB_KEY_NoSymbol)
-		{
-			char name[128];
-			if (xkb_keysym_get_name(sym, name, sizeof(name)) < 0)
-			{
-				snprintf(name, sizeof(name), "(bad)");
-			}
-			wlr_log(WLR_INFO, "keyboard: keysym=%s mods=0x%x", name, mods_filtered);
-		}
-	}
-
-	wlr_seat_set_keyboard(kbd->server->seat, wlr_kbd);
-	wlr_keyboard_notify_key(wlr_kbd, event);
-	if (pressed && comp_config_try_bindings(kbd->server->config, kbd->server, pressed, mods_filtered, sym))
-	{
-		if (mods_filtered & WLR_MODIFIER_LOGO)
-		{
-			kbd->server->suppress_logo_pointer_drag = true;
-		}
-		keyboard_key_dispatch_depth--;
-		return;
-	}
-	wlr_seat_keyboard_notify_key(kbd->server->seat, event->time_msec, event->keycode, event->state);
-	keyboard_key_dispatch_depth--;
-}
-
-/** Keyboard modifiers callback: forward effective modifiers to seat. */
-static void keyboard_handle_modifiers(struct wl_listener *listener, void *data)
-{
-	(void)data;
-	struct comp_keyboard *kbd = wl_container_of(listener, kbd, modifiers);
-	if (!kbd->server || !kbd->server->seat || kbd->server->display_terminate_requested)
-	{
-		return;
-	}
-	struct wlr_keyboard *wlr_kbd = wlr_keyboard_from_input_device(kbd->dev);
-	wlr_seat_set_keyboard(kbd->server->seat, wlr_kbd);
-	wlr_seat_keyboard_notify_modifiers(kbd->server->seat, &wlr_kbd->modifiers);
-	if ((wlr_kbd->modifiers.depressed & WLR_MODIFIER_LOGO) == 0)
-	{
-		kbd->server->suppress_logo_pointer_drag = false;
-	}
 }
 
 /** Resolve configured output name to current wlroots output object. */
@@ -5448,11 +5350,12 @@ static void server_new_input(struct wl_listener *listener, void *data)
 		xkb_context_unref(ctx);
 		wlr_keyboard_set_repeat_info(wlr_kbd, 25, 600);
 
+		wlr_kbd->data = kbd;
 		kbd->destroy.notify = keyboard_handle_destroy;
 		wl_signal_add(&dev->events.destroy, &kbd->destroy);
-		kbd->key.notify = keyboard_handle_key;
+		kbd->key.notify = comp_keyboard_handle_key;
 		wl_signal_add(&wlr_kbd->events.key, &kbd->key);
-		kbd->modifiers.notify = keyboard_handle_modifiers;
+		kbd->modifiers.notify = comp_keyboard_handle_modifiers;
 		wl_signal_add(&wlr_kbd->events.modifiers, &kbd->modifiers);
 
 		wlr_seat_set_keyboard(server->seat, wlr_kbd);
@@ -6055,15 +5958,7 @@ static void layer_surface_try_keyboard_focus_click(struct comp_server *server, d
 		return;
 	}
 	struct wlr_seat *seat = server->seat;
-	struct wlr_keyboard *kbd = wlr_seat_get_keyboard(seat);
-	if (kbd)
-	{
-		wlr_seat_keyboard_notify_enter(seat, ls->surface, kbd->keycodes, kbd->num_keycodes, &kbd->modifiers);
-	}
-	else
-	{
-		wlr_seat_keyboard_notify_enter(seat, ls->surface, NULL, 0, NULL);
-	}
+	comp_keyboard_notify_enter(seat, ls->surface);
 }
 
 /** Pointer button callback: grab lifecycle, focus policy, and client button forwarding. */

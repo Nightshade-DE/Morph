@@ -5,6 +5,8 @@
 #include <stdint.h>
 #include <wayland-server-core.h>
 #include <wlr/util/log.h>
+#include <wlr/util/box.h>
+#include <wlr/types/wlr_keyboard.h>
 
 struct wlr_allocator;
 struct wlr_backend;
@@ -166,14 +168,16 @@ struct comp_toplevel
 	struct wl_listener xdg_decoration_request_mode;
 };
 
-/** Keyboard device listeners bound to one input device instance. */
-struct comp_keyboard
-{
+/** Keyboard listeners and shortcut state, also referenced by wlr_keyboard.data. */
+struct comp_keyboard {
 	struct wl_listener destroy;
 	struct wl_listener key;
 	struct wl_listener modifiers;
 	struct comp_server *server;
 	struct wlr_input_device *dev;
+	/* Held shortcut keys stay consumed until release, even across focus changes. */
+	uint32_t consumed[WLR_KEYBOARD_KEYS_CAP];
+	size_t num_consumed;
 };
 
 /** Tablet device with tablet-v2 protocol object (one per WLR_INPUT_DEVICE_TABLET). */
