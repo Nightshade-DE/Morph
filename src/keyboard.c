@@ -11,10 +11,103 @@
 #include "server.h"
 
 /**
+ * Unlink a registered wrapper and clear the device's compositor back-reference.
+ *
+ * The backend owns the input device and its keymap. The caller handles seat
+ * selection separately; this helper is shared by hot-unplug and shutdown.
+ */
+static void keyboard_remove(struct comp_keyboard *kbd) {
+	wlr_keyboard_from_input_device(kbd->dev)->data = NULL;
+	wl_list_remove(&kbd->destroy.link);
+	wl_list_remove(&kbd->key.link);
+	wl_list_remove(&kbd->modifiers.link);
+	wl_list_remove(&kbd->link);
+	free(kbd);
+}
+
+/**
+ * Handle backend device destruction while the seat is still available.
+ *
+ * If this was the active keyboard, select the oldest remaining device or clear
+ * the seat keyboard. Removing an inactive device preserves the current selection.
+ */
+static void keyboard_destroy(struct wl_listener *listener, void *data) {
+	(void)data;
+	struct comp_keyboard *kbd = wl_container_of(listener, kbd, destroy);
+	struct comp_server *server = kbd->server;
+	bool active = wlr_seat_get_keyboard(server->seat) == wlr_keyboard_from_input_device(kbd->dev);
+	keyboard_remove(kbd);
+	if (active) {
+		struct wlr_keyboard *next = NULL;
+		if (!wl_list_empty(&server->keyboards)) {
+			struct comp_keyboard *first = wl_container_of(server->keyboards.next, first, link);
+			next = wlr_keyboard_from_input_device(first->dev);
+		}
+		wlr_seat_set_keyboard(server->seat, next);
+	}
+	server_update_seat_capabilities(server);
+}
+
+/**
+ * Install the validated config keymap and register a backend-owned keyboard.
+ *
+ * Requires an initialized seat and keyboard list. Failure logs the cause and
+ * leaves the seat and listener lists unchanged. Success assigns a session ID,
+ * stores the wrapper in keyboard->data, and makes the device active on the seat.
+ */
+bool comp_keyboard_add(struct comp_server *server, struct wlr_input_device *device) {
+	struct wlr_keyboard *keyboard = wlr_keyboard_from_input_device(device);
+	struct comp_keyboard *kbd = calloc(1, sizeof(*kbd));
+	if (!kbd) {
+		wlr_log(WLR_ERROR, "keyboard: cannot allocate device state for '%s'", device->name);
+		return false;
+	}
+	/* Do not publish a device until keymap installation has succeeded. */
+	if (!server->config->keyboard.keymap || server->next_keyboard_id == UINT64_MAX ||
+		!wlr_keyboard_set_keymap(keyboard, server->config->keyboard.keymap)) {
+		wlr_log(WLR_ERROR, "keyboard: cannot install keymap for '%s'", device->name);
+		free(kbd);
+		return false;
+	}
+	kbd->server = server;
+	kbd->dev = device;
+	kbd->id = ++server->next_keyboard_id;
+	kbd->destroy.notify = keyboard_destroy;
+	kbd->key.notify = comp_keyboard_handle_key;
+	kbd->modifiers.notify = comp_keyboard_handle_modifiers;
+	wl_signal_add(&device->events.destroy, &kbd->destroy);
+	wl_signal_add(&keyboard->events.key, &kbd->key);
+	wl_signal_add(&keyboard->events.modifiers, &kbd->modifiers);
+	wl_list_insert(server->keyboards.prev, &kbd->link);
+	keyboard->data = kbd;
+	wlr_keyboard_set_repeat_info(keyboard, 25, 600);
+	wlr_seat_set_keyboard(server->seat, keyboard);
+	server_update_seat_capabilities(server);
+	return true;
+}
+
+/**
+ * Detach all keyboard wrappers before seat and backend teardown.
+ *
+ * Clear the seat selection first, then remove our listeners so later backend
+ * release/destroy events cannot access compositor state during shutdown.
+ * Device destruction remains the backend's responsibility.
+ */
+void comp_keyboard_clear(struct comp_server *server) {
+	wlr_seat_set_keyboard(server->seat, NULL);
+	struct comp_keyboard *kbd, *tmp;
+	wl_list_for_each_safe(kbd, tmp, &server->keyboards, link) {
+		keyboard_remove(kbd);
+	}
+}
+
+/**
  * Keyboard key callback.
  *
  * Resolves keysym/modifier state for binding matching and forwards events to
- * focused clients. wlroots updates XKB after this listener returns.
+ * focused clients. For raw events, wlroots updates XKB after this listener
+ * returns; nested backends supply modifier masks separately. Do not re-enter
+ * wlr_keyboard_notify_key() or update XKB here, even for consumed shortcuts.
  */
 void comp_keyboard_handle_key(struct wl_listener *listener, void *data) {
 	struct comp_keyboard *kbd = wl_container_of(listener, kbd, key);
@@ -40,6 +133,7 @@ void comp_keyboard_handle_key(struct wl_listener *listener, void *data) {
 	}
 
 	const bool pressed = event->state == WL_KEYBOARD_KEY_STATE_PRESSED;
+	/* Consumption lasts until release, regardless of later modifiers or focus. */
 	for (size_t i = 0; i < kbd->num_consumed; i++) {
 		if (kbd->consumed[i] == event->keycode) {
 			if (!pressed) {
@@ -77,7 +171,12 @@ void comp_keyboard_handle_key(struct wl_listener *listener, void *data) {
 	wlr_seat_keyboard_notify_key(kbd->server->seat, event->time_msec, event->keycode, event->state);
 }
 
-/** Keyboard modifiers callback: forward effective modifiers to seat. */
+/**
+ * Forward wlroots' serialized modifier masks and effective group to the seat.
+ *
+ * Group-only changes follow the same path. Resolve Logo through wlroots rather
+ * than comparing XKB mask positions with WLR modifier constants.
+ */
 void comp_keyboard_handle_modifiers(struct wl_listener *listener, void *data) {
 	(void)data;
 	struct comp_keyboard *kbd = wl_container_of(listener, kbd, modifiers);
@@ -92,7 +191,12 @@ void comp_keyboard_handle_modifiers(struct wl_listener *listener, void *data) {
 	}
 }
 
-/** Keep compositor shortcuts out of the held-key snapshot sent on focus changes. */
+/**
+ * Transfer keyboard focus with consumed shortcut keys removed from the snapshot.
+ *
+ * Requires a valid target surface. Filter a local copy: wlroots must retain the
+ * complete pressed-key list for its own XKB updates and device cleanup.
+ */
 void comp_keyboard_notify_enter(struct wlr_seat *seat, struct wlr_surface *surface) {
 	struct wlr_keyboard *keyboard = wlr_seat_get_keyboard(seat);
 	if (!keyboard) {

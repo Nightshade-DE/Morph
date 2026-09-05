@@ -26,11 +26,15 @@ static char *xstrdup(const char *s) {
 
 /** Trim ASCII whitespace at both ends of a mutable string in place. */
 static void trim_inplace(char *s) {
-	char *end;
-	while (*s && isspace((unsigned char)*s)) {
-		memmove(s, s + 1, strlen(s) + 1);
+	char *start = s;
+	while (*start && isspace((unsigned char)*start)) {
+		start++;
 	}
-	end = s + strlen(s);
+	if (start != s) {
+		/* Copy the suffix and its terminator once, without reading past the buffer. */
+		memmove(s, start, strlen(start) + 1);
+	}
+	char *end = s + strlen(s);
 	while (end > s && isspace((unsigned char)end[-1])) {
 		*--end = '\0';
 	}
@@ -74,6 +78,7 @@ static void decoration_rule_destroy(struct comp_decoration_rule *r) {
 	memset(r, 0, sizeof(*r));
 }
 
+/** Release parsed rules, commands, and the configuration's shared keymap reference. */
 void comp_config_free(struct comp_config *cfg) {
 	if (!cfg) {
 		return;
@@ -82,6 +87,7 @@ void comp_config_free(struct comp_config *cfg) {
 		keybind_clear(&cfg->binds[i]);
 	}
 	free(cfg->binds);
+	comp_keyboard_config_finish(&cfg->keyboard);
 	for (size_t i = 0; i < cfg->n_tile_rules; i++) {
 		tile_rule_destroy(&cfg->tile_rules[i]);
 	}
@@ -1141,14 +1147,21 @@ void comp_config_tile_props_for_toplevel(const struct comp_config *cfg, const ch
 }
 
 /**
- * Load compositor config from disk, applying defaults when no file exists.
+ * Load compositor config from disk, using built-in fallback only when enabled.
  *
  * The parser is section-based and performs strict key validation per section,
  * except for explicitly accepted compatibility keys.
+ * Keyboard values begin with the process environment and are overridden by
+ * [keyboard] entries. Publish cfg_out only after parsing and keymap compilation
+ * succeed; failure frees the candidate and leaves the caller's output unchanged.
  */
 bool comp_config_load(const char *path, struct comp_config **cfg_out) {
 	struct comp_config *cfg = calloc(1, sizeof(*cfg));
 	if (!cfg) {
+		return false;
+	}
+	if (!comp_keyboard_config_init(&cfg->keyboard)) {
+		comp_config_free(cfg);
 		return false;
 	}
 	apply_layout_anim_defaults(cfg);
@@ -1169,6 +1182,10 @@ bool comp_config_load(const char *path, struct comp_config **cfg_out) {
 			 * session should still come up even though no config file resolved. */
 			wlr_log(WLR_INFO, "Builtin config fallback enabled; using synthesized defaults");
 			load_defaults(cfg);
+			if (!comp_keyboard_config_compile(&cfg->keyboard)) {
+				comp_config_free(cfg);
+				return false;
+			}
 			*cfg_out = cfg;
 			return true;
 		}
@@ -1179,6 +1196,7 @@ bool comp_config_load(const char *path, struct comp_config **cfg_out) {
 	struct comp_keybind cur = {0};
 	struct tile_rule_parse cur_tile = {0};
 	struct decoration_rule_parse cur_dec = {0};
+	bool in_keyboard = false;
 	bool in_bind = false;
 	bool in_tile = false;
 	bool in_hooks = false;
@@ -1196,6 +1214,12 @@ bool comp_config_load(const char *path, struct comp_config **cfg_out) {
 	/* Single-pass parser: section switches flush pending block state. */
 	while (fgets(linebuf, sizeof(linebuf), f)) {
 		line_no++;
+		/* Reject a full buffer before it can be parsed as multiple logical lines. */
+		if (!strchr(linebuf, '\n') && strlen(linebuf) == sizeof(linebuf) - 1) {
+			wlr_log(WLR_ERROR, "%s:%zu: config line exceeds 4094 bytes", path, line_no);
+			ok = false;
+			break;
+		}
 		char *line = linebuf;
 		trim_inplace(line);
 		if (!line[0] || line[0] == '#') {
@@ -1222,6 +1246,7 @@ bool comp_config_load(const char *path, struct comp_config **cfg_out) {
 			keybind_clear(&cur);
 			tile_rule_parse_reset(&cur_tile);
 			decoration_rule_parse_reset(&cur_dec);
+			in_keyboard = false;
 			in_bind = false;
 			in_tile = false;
 			in_hooks = false;
@@ -1230,7 +1255,9 @@ bool comp_config_load(const char *path, struct comp_config **cfg_out) {
 			in_decoration_rule = false;
 			in_pointer = false;
 			in_input_map = false;
-			if (!strcasecmp(line, "[bind]")) {
+			if (!strcasecmp(line, "[keyboard]")) {
+				in_keyboard = true;
+			} else if (!strcasecmp(line, "[bind]")) {
 				in_bind = true;
 			} else if (!strcasecmp(line, "[tile_rule]") || !strcasecmp(line, "[tilerule]")) {
 				in_tile = true;
@@ -1253,7 +1280,7 @@ bool comp_config_load(const char *path, struct comp_config **cfg_out) {
 			}
 			continue;
 		}
-		if (!in_bind && !in_tile && !in_hooks && !in_layout_anim && !in_decoration && !in_decoration_rule &&
+		if (!in_keyboard && !in_bind && !in_tile && !in_hooks && !in_layout_anim && !in_decoration && !in_decoration_rule &&
 			!in_pointer &&
 			!in_input_map) {
 			wlr_log(WLR_ERROR,
@@ -1271,7 +1298,12 @@ bool comp_config_load(const char *path, struct comp_config **cfg_out) {
 		*eq++ = '\0';
 		trim_inplace(line);
 		trim_inplace(eq);
-		if (in_bind) {
+		if (in_keyboard) {
+			if (!comp_keyboard_config_set(&cfg->keyboard, line, eq)) {
+				wlr_log(WLR_ERROR, "%s:%zu: invalid keyboard setting", path, line_no);
+				ok = false;
+			}
+		} else if (in_bind) {
 			if (!strcasecmp(line, "mods")) {
 				if (!parse_mods_string(eq, &cur.mods)) {
 					ok = false;
@@ -1427,6 +1459,10 @@ bool comp_config_load(const char *path, struct comp_config **cfg_out) {
 			break;
 		}
 	}
+	if (ferror(f)) {
+		wlr_log_errno(WLR_ERROR, "Failed to read config %s", path);
+		ok = false;
+	}
 	fclose(f);
 
 	/* Flush the last open block because file end has no section boundary. */
@@ -1458,6 +1494,10 @@ bool comp_config_load(const char *path, struct comp_config **cfg_out) {
 		load_defaults(cfg);
 	}
 
+	if (!comp_keyboard_config_compile(&cfg->keyboard)) {
+		comp_config_free(cfg);
+		return false;
+	}
 	*cfg_out = cfg;
 	return true;
 }

@@ -168,8 +168,17 @@ struct comp_toplevel
 	struct wl_listener xdg_decoration_request_mode;
 };
 
-/** Keyboard listeners and shortcut state, also referenced by wlr_keyboard.data. */
+/**
+ * Compositor-owned state for one backend-owned keyboard.
+ *
+ * Registered wrappers belong to server.keyboards and are referenced through
+ * wlr_keyboard.data. Hot-unplug or compositor shutdown detaches and frees them;
+ * neither path transfers ownership of the input device to Morph.
+ */
 struct comp_keyboard {
+	struct wl_list link;
+	/* Monotonic session ID; removed keyboard IDs are never reused. */
+	uint64_t id;
 	struct wl_listener destroy;
 	struct wl_listener key;
 	struct wl_listener modifiers;
@@ -238,6 +247,12 @@ struct comp_server
 	struct wlr_tablet_manager_v2 *tablet_manager;
 	struct wl_list tablets;
 	struct wl_list tracked_inputs;
+	/** Registered comp_keyboard wrappers in attachment order. */
+	struct wl_list keyboards;
+	/** Last assigned session ID; incremented only after successful installation. */
+	uint64_t next_keyboard_id;
+	/** Propagates synchronous new_input failure out of wlr_backend_start(). */
+	bool keyboard_start_failed;
 	struct wlr_seat *seat;
 	struct wl_listener backend_destroy;
 	struct wl_listener new_output;
@@ -322,6 +337,9 @@ static inline void server_request_terminate(struct comp_server *server, const ch
 }
 
 bool server_init(struct comp_server *server);
+
+/** Recompute seat capabilities after input devices are added or removed. */
+void server_update_seat_capabilities(struct comp_server *server);
 
 /** Apply `[input_map]` rules to cursor-attached devices (call after new input/output and config reload). */
 void server_apply_input_device_maps(struct comp_server *server);

@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <wlr/types/wlr_keyboard.h>
 #include <xkbcommon/xkbcommon.h>
+#include "keyboard_config.h"
 
 struct comp_server;
 
@@ -89,6 +90,8 @@ struct comp_decoration_rule {
 };
 
 struct comp_config {
+	/** Resolved [keyboard]/environment values and the validated shared keymap. */
+	struct comp_keyboard_config keyboard;
 	struct comp_keybind *binds;
 	size_t n_binds;
 	struct comp_tile_rule *tile_rules;

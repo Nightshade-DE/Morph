@@ -1,6 +1,6 @@
 # Roadmap: Complete XKB Support
 
-Date: 2026-09-05. Status: phase 1 implemented; runtime acceptance pending.
+Date: 2026-09-05. Status: phases 1 and 2 implemented; runtime acceptance pending.
 German version: [Roadmap.de.md](Roadmap.de.md).
 Sources: [audit](problems.de.md) and [requirements](copilot-instructions.md).
 Source references refer to audit baseline `c4523e9`.
@@ -28,7 +28,7 @@ These decisions provide the basis for implementation and tests.
 - Missing layout/model use `us` and `pc105`; shipped environment files retain
   `de,us`. Empty options disable options; missing and explicitly empty values
   are not indiscriminately treated as equivalent.
-- A future `[keyboard]` section in `morph.conf` supplies reloadable RMLVO values.
+- The `[keyboard]` section in `morph.conf` supplies reloadable RMLVO values.
   Reload reads this file and uses the environment values resolved at startup
   for unspecified fields. The compositor does not re-execute environment files
   as shell code.
@@ -72,20 +72,26 @@ Priority: high. Dependency: phase 1. Findings: XKB-03, XKB-05, GEN-02.
 Entry points: `src/main.c:5392`, `src/main.c:5446`, `src/config.c:31`,
 `scripts/morph-session:47`, `testing/morph-session_dbg:61`.
 
-- [ ] Capture, restore, and export `XKB_DEFAULT_RULES` in both launchers.
-- [ ] Introduce shared RMLVO resolution with documented precedence, defaults,
+- [x] Capture, restore, and export `XKB_DEFAULT_RULES` in both launchers.
+- [x] Introduce shared RMLVO resolution with documented precedence, defaults,
   and empty-value handling; associate multiple layouts with their variants.
-- [ ] Parse and validate `[keyboard]`; fix buffer issue GEN-02 and handle
+- [x] Parse and validate `[keyboard]`; fix buffer issue GEN-02 and handle
   oversized lines explicitly.
-- [ ] Encapsulate keymap creation and installation; check every return value.
+- [x] Encapsulate keymap creation and installation; check every return value.
   Report a clear error when startup has no valid keymap; hotplug failures must
   not leave a partially initialized keyboard or terminate the session.
-- [ ] Track keyboards for reload and hotplug; manage listeners, references,
+- [x] Track keyboards for reload and hotplug; manage listeners, references,
   and device identities with an explicit lifecycle.
 
 Acceptance: all five variables reach release and debug launchers correctly.
 Invalid rules, variants, layouts, and installation failures produce actionable
 errors without leaks or silent substitution of another configuration.
+
+Implementation status: phase 2 code and automated tests are complete. All three
+Meson suites pass; config and keyboard tests also pass with AddressSanitizer/UBSan.
+Both launchers are tested with system/user/caller values. Actual device hotplug
+and native/nested session checks remain manual acceptance work. Changed keyboard
+settings currently require a restart; live replacement is phase 3.
 
 ## Phase 3: Client synchronization and keymap reload
 
@@ -183,6 +189,8 @@ Dependencies: all preceding phases. Add tests alongside each implementation phas
   wlroots versions with versions actually tested.
 - [ ] Update `docs/CONFIG.md`, `docs/CLI.md`, `docs/ENVIRONMENT.md`,
   `docs/TESTS.md`, and the manual test plan; keep both roadmaps synchronized.
+- [ ] Explain RMLVO (Rules, Model, Layout, Variant, Options) in user documentation
+  with a complete example, including variant placeholders and group switching.
 
 ## Completion criteria and order
 

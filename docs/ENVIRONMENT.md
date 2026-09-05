@@ -289,9 +289,12 @@ This is often useful for X11 applications started through Xwayland, for example 
 <a id="xkb-variables"></a>
 ## XKB Variables
 
-These variables are read by **Morph** keyboard initialization via getenv().
-The development launcher does not parse them; it only sources [`testing/config/environment`](../testing/config/environment).
+Both launchers export all five variables after resolving the environment layers.
+Caller values take precedence over user environment files, which take precedence
+over system environment files. Morph captures the resolved values when loading
+its configuration; `[keyboard]` entries override them.
 
+- XKB_DEFAULT_RULES
 - XKB_DEFAULT_LAYOUT
 - XKB_DEFAULT_MODEL
 - XKB_DEFAULT_VARIANT
@@ -299,8 +302,13 @@ The development launcher does not parse them; it only sources [`testing/config/e
 
 Behavior:
 
-- unset or empty values let libxkbcommon use its system defaults
-- set values are forwarded to xkb_rule_names and used for keymap compile
+- Missing or empty environment layout/model values use `us`/`pc105`.
+- Missing or empty environment rules use libxkbcommon system rules.
+- Missing variant/options values use no variants/options; explicitly empty
+  values also clear these settings. The launchers preserve caller empty values.
+- The shipped environment selects `de,us`, `pc105`, and `grp:alt_shift_toggle`.
+- Explicit `[keyboard]` settings take priority. See [CONFIG.md](CONFIG.md#section-keyboard)
+  for validation and the current restart requirement for changed keyboard settings.
 
 Example:
 

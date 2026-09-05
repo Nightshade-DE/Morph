@@ -151,7 +151,6 @@ static struct comp_output *toplevel_preferred_output(struct comp_toplevel *view)
 static struct comp_output *toplevel_tile_output(struct comp_toplevel *t);
 static void foreign_toplevel_refresh(struct comp_toplevel *view);
 static void foreign_toplevel_sync_all(struct comp_server *server);
-static void server_update_seat_capabilities(struct comp_server *server);
 static void layer_surface_try_keyboard_focus_click(struct comp_server *server, double lx, double ly);
 static void track_input_device(struct comp_server *server, struct wlr_input_device *dev);
 static void input_device_apply_libinput_defaults(struct wlr_input_device *dev);
@@ -4486,36 +4485,34 @@ static void ipc_process_line(struct comp_server *server, char *line)
 }
 
 /** Reload config from remembered/default path and apply runtime updates atomically. */
-static bool server_reload_config(struct comp_server *server)
-{
+static bool server_reload_config(struct comp_server *server) {
 	const char *path = server->config_path;
 	char fallback[PATH_MAX];
-	if (!path || !path[0])
-	{
-		if (comp_config_default_path(fallback, sizeof(fallback)))
-		{
+	if (!path || !path[0]) {
+		if (comp_config_default_path(fallback, sizeof(fallback))) {
 			path = fallback;
-		}
-		else if (!comp_config_builtin_fallback_enabled())
-		{
+		} else if (!comp_config_builtin_fallback_enabled()) {
 			wlr_log(WLR_ERROR, "reload: no config path and no default config file");
 			return false;
-		}
-		else
-		{
+		} else {
 			wlr_log(WLR_INFO, "reload: no config file resolved; using built-in defaults");
 		}
 	}
 	struct comp_config *new_cfg = NULL;
-	if (!comp_config_load(path, &new_cfg))
-	{
+	if (!comp_config_load(path, &new_cfg)) {
+		return false;
+	}
+	/* Reject RMLVO changes until live keymap replacement is supported. Otherwise
+	 * hotplug would use the new settings while attached devices kept the old map. */
+	if (!comp_keyboard_config_equal(&server->config->keyboard, &new_cfg->keyboard)) {
+		wlr_log(WLR_ERROR, "reload: keyboard settings changed; restart Morph to apply them");
+		comp_config_free(new_cfg);
 		return false;
 	}
 	struct comp_config *old = server->config;
 	server->config = new_cfg;
 	comp_config_free(old);
-	if (server->layout == COMP_LAYOUT_TILE || server->layout == COMP_LAYOUT_SCROLL)
-	{
+	if (server->layout == COMP_LAYOUT_TILE || server->layout == COMP_LAYOUT_SCROLL) {
 		server_refresh_all_tile_props(server);
 		server_arrange_toplevels(server);
 	}
@@ -4630,18 +4627,6 @@ static void ipc_fini(struct comp_server *server)
 		unlink(server->ipc_socket_path);
 		server->ipc_socket_path[0] = '\0';
 	}
-}
-
-/** Keyboard wrapper destroy callback: remove listeners and free state. */
-static void keyboard_handle_destroy(struct wl_listener *listener, void *data)
-{
-	(void)data;
-	struct comp_keyboard *kbd = wl_container_of(listener, kbd, destroy);
-	wlr_keyboard_from_input_device(kbd->dev)->data = NULL;
-	wl_list_remove(&kbd->destroy.link);
-	wl_list_remove(&kbd->key.link);
-	wl_list_remove(&kbd->modifiers.link);
-	free(kbd);
 }
 
 /** Resolve configured output name to current wlroots output object. */
@@ -4769,14 +4754,14 @@ static void server_clear_tracked_inputs(struct comp_server *server)
 }
 
 /** Recompute wl_seat capability bitset from currently tracked devices. */
-static void server_update_seat_capabilities(struct comp_server *server)
-{
-	uint32_t caps = WL_SEAT_CAPABILITY_POINTER | WL_SEAT_CAPABILITY_KEYBOARD;
+void server_update_seat_capabilities(struct comp_server *server) {
+	uint32_t caps = WL_SEAT_CAPABILITY_POINTER;
+	if (!wl_list_empty(&server->keyboards)) {
+		caps |= WL_SEAT_CAPABILITY_KEYBOARD;
+	}
 	struct comp_tracked_input *ti;
-	wl_list_for_each(ti, &server->tracked_inputs, link)
-	{
-		if (ti->dev->type == WLR_INPUT_DEVICE_TOUCH)
-		{
+	wl_list_for_each(ti, &server->tracked_inputs, link) {
+		if (ti->dev->type == WLR_INPUT_DEVICE_TOUCH) {
 			caps |= WL_SEAT_CAPABILITY_TOUCH;
 			break;
 		}
@@ -5272,97 +5257,18 @@ static void input_device_apply_libinput_defaults(struct wlr_input_device *dev)
 }
 
 /** new_input callback: initialize device-specific handlers and seat integration. */
-static void server_new_input(struct wl_listener *listener, void *data)
-{
+static void server_new_input(struct wl_listener *listener, void *data) {
 	struct comp_server *server = wl_container_of(listener, server, new_input);
 	struct wlr_input_device *dev = data;
 
-	switch (dev->type)
-	{
+	switch (dev->type) {
 	case WLR_INPUT_DEVICE_KEYBOARD:
-	{
-		struct wlr_keyboard *wlr_kbd = wlr_keyboard_from_input_device(dev);
-		struct comp_keyboard *kbd = calloc(1, sizeof(*kbd));
-		if (!kbd)
-		{
-			wlr_log(WLR_ERROR, "Out of memory allocating keyboard state");
-			return;
+		/* new_input cannot return an error to backend_start. Record startup failure;
+		 * a later hotplug failure only rejects that device and keeps the session. */
+		if (!comp_keyboard_add(server, dev) && !compositor_session_active) {
+			server->keyboard_start_failed = true;
 		}
-		kbd->server = server;
-		kbd->dev = dev;
-
-		const char *xkb_layout = getenv("XKB_DEFAULT_LAYOUT");
-		const char *xkb_model = getenv("XKB_DEFAULT_MODEL");
-		const char *xkb_variant = getenv("XKB_DEFAULT_VARIANT");
-		const char *xkb_options = getenv("XKB_DEFAULT_OPTIONS");
-		if (xkb_layout && !xkb_layout[0])
-		{
-			xkb_layout = NULL;
-		}
-		if (xkb_model && !xkb_model[0])
-		{
-			xkb_model = NULL;
-		}
-		if (xkb_variant && !xkb_variant[0])
-		{
-			xkb_variant = NULL;
-		}
-		if (xkb_options && !xkb_options[0])
-		{
-			xkb_options = NULL;
-		}
-		if (xkb_layout || xkb_model || xkb_variant || xkb_options)
-		{
-			wlr_log(WLR_INFO,
-					"XKB rules from environment: layout='%s' model='%s' variant='%s' options='%s'",
-					xkb_layout ? xkb_layout : "",
-					xkb_model ? xkb_model : "",
-					xkb_variant ? xkb_variant : "",
-					xkb_options ? xkb_options : "");
-		}
-		struct xkb_rule_names rules = {
-			.layout = xkb_layout,
-			.model = xkb_model,
-			.variant = xkb_variant,
-			.options = xkb_options,
-		};
-
-		struct xkb_context *ctx = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
-		if (!ctx)
-		{
-			wlr_log(WLR_ERROR, "Failed to create XKB context");
-			exit(1);
-		}
-		struct xkb_keymap *map = xkb_keymap_new_from_names(ctx, &rules, XKB_KEYMAP_COMPILE_NO_FLAGS);
-		if (!map)
-		{
-			wlr_log(WLR_ERROR,
-					"Failed to compile XKB keymap (layout='%s' model='%s' variant='%s' options='%s')",
-					xkb_layout ? xkb_layout : "",
-					xkb_model ? xkb_model : "",
-					xkb_variant ? xkb_variant : "",
-					xkb_options ? xkb_options : "");
-			xkb_context_unref(ctx);
-			exit(1);
-		}
-		wlr_keyboard_set_keymap(wlr_kbd, map);
-		xkb_keymap_unref(map);
-		xkb_context_unref(ctx);
-		wlr_keyboard_set_repeat_info(wlr_kbd, 25, 600);
-
-		wlr_kbd->data = kbd;
-		kbd->destroy.notify = keyboard_handle_destroy;
-		wl_signal_add(&dev->events.destroy, &kbd->destroy);
-		kbd->key.notify = comp_keyboard_handle_key;
-		wl_signal_add(&wlr_kbd->events.key, &kbd->key);
-		kbd->modifiers.notify = comp_keyboard_handle_modifiers;
-		wl_signal_add(&wlr_kbd->events.modifiers, &kbd->modifiers);
-
-		wlr_seat_set_keyboard(server->seat, wlr_kbd);
-		server_update_seat_capabilities(server);
-		/* Do not wlr_cursor_attach_input_device(keyboard): only pointer/touch/tablet. */
 		break;
-	}
 	case WLR_INPUT_DEVICE_POINTER:
 		input_device_apply_libinput_defaults(dev);
 		wlr_cursor_attach_input_device(server->cursor, dev);
@@ -5374,11 +5280,9 @@ static void server_new_input(struct wl_listener *listener, void *data)
 		track_input_device(server, dev);
 		server_update_seat_capabilities(server);
 		break;
-	case WLR_INPUT_DEVICE_TABLET:
-	{
+	case WLR_INPUT_DEVICE_TABLET: {
 		struct comp_tablet *tab = calloc(1, sizeof(*tab));
-		if (!tab)
-		{
+		if (!tab) {
 			wlr_log(WLR_ERROR, "Out of memory allocating tablet state");
 			return;
 		}
@@ -5386,8 +5290,7 @@ static void server_new_input(struct wl_listener *listener, void *data)
 		tab->dev = dev;
 		tab->wlr_tablet = wlr_tablet_from_input_device(dev);
 		tab->v2_tablet = wlr_tablet_create(server->tablet_manager, server->seat, dev);
-		if (!tab->v2_tablet)
-		{
+		if (!tab->v2_tablet) {
 			free(tab);
 			wlr_log(WLR_ERROR, "wlr_tablet_create failed for %s", dev->name);
 			return;
@@ -6358,6 +6261,7 @@ bool server_init(struct comp_server *server)
 	}
 	wl_list_init(&server->tablets);
 	wl_list_init(&server->tracked_inputs);
+	wl_list_init(&server->keyboards);
 
 	server->cursor_motion.notify = server_cursor_motion;
 	wl_signal_add(&server->cursor->events.motion, &server->cursor_motion);
@@ -6427,6 +6331,7 @@ static void server_finish(struct comp_server *server)
 	 * Remove tracked-input destroy listeners now so they cannot call seat capability updates
 	 * on partially destroyed seat/client objects.
 	 */
+	comp_keyboard_clear(server);
 	server_clear_tracked_inputs(server);
 	/*
 	 * Prevent wlroots destroy-time assertions by removing our listeners from
@@ -7012,7 +6917,7 @@ int main(int argc, char **argv)
 	struct comp_config *cfg = NULL;
 	if (!comp_config_load(cfg_path, &cfg))
 	{
-		wlr_log(WLR_ERROR, "Failed to load keybind config");
+		wlr_log(WLR_ERROR, "Failed to load configuration");
 		return 1;
 	}
 
@@ -7046,8 +6951,7 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	if (!wlr_backend_start(server.backend))
-	{
+	if (!wlr_backend_start(server.backend) || server.keyboard_start_failed) {
 		wlr_log(WLR_ERROR, "Failed to start backend");
 		server_destroy_xwayland(&server);
 		server_finish(&server);

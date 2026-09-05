@@ -36,6 +36,7 @@ morph_restore_caller_override() {
 # Load environment layers.
 # ==============================================================================
 # Preserve caller overrides before lower-priority environment files are sourced.
+# Keep all five XKB fields together, including explicitly empty caller values.
 for var_name in \
     WAYLAND_DEBUG WLR_LOGTS _JAVA_AWT_WM_NONREPARENTING WMNAME \
     LD_LIBRARY_PATH \
@@ -44,7 +45,7 @@ for var_name in \
     MORPH_SYSTEM_CONFIG_FILE MORPH_BIN MORPH_ALLOW_BUILTIN_FALLBACK \
     MORPH_PORTAL_LIBEXEC_DIR MORPH_DEBUG_XDG MORPH_DEBUG_XDG_COMMITS MORPH_DEBUG_POINTER_FOCUS MORPH_DEBUG_LAYER_HIT \
     MORPH_BRIDGE_RESIZE_HZ MORPH_LOG_KEYS \
-    XKB_DEFAULT_LAYOUT XKB_DEFAULT_MODEL XKB_DEFAULT_VARIANT XKB_DEFAULT_OPTIONS
+    XKB_DEFAULT_RULES XKB_DEFAULT_LAYOUT XKB_DEFAULT_MODEL XKB_DEFAULT_VARIANT XKB_DEFAULT_OPTIONS
 do
     morph_capture_caller_override "$var_name"
 done
@@ -77,7 +78,7 @@ for var_name in \
     MORPH_SYSTEM_CONFIG_FILE MORPH_BIN MORPH_ALLOW_BUILTIN_FALLBACK \
     MORPH_PORTAL_LIBEXEC_DIR MORPH_DEBUG_XDG MORPH_DEBUG_XDG_COMMITS MORPH_DEBUG_POINTER_FOCUS MORPH_DEBUG_LAYER_HIT \
     MORPH_BRIDGE_RESIZE_HZ MORPH_LOG_KEYS \
-    XKB_DEFAULT_LAYOUT XKB_DEFAULT_MODEL XKB_DEFAULT_VARIANT XKB_DEFAULT_OPTIONS
+    XKB_DEFAULT_RULES XKB_DEFAULT_LAYOUT XKB_DEFAULT_MODEL XKB_DEFAULT_VARIANT XKB_DEFAULT_OPTIONS
 do
     morph_restore_caller_override "$var_name"
 done
@@ -155,7 +156,8 @@ export MORPH_HELPER_LIB="$MORPH_SYSTEM_HOOK_DIR/shell-helpers.sh"
 if [ -n "${LD_LIBRARY_PATH+x}" ]; then export LD_LIBRARY_PATH; fi
 
 # Forward optional XKB overrides from environment file/caller into morph.
-# Keep unset values untouched so libxkbcommon can use system defaults.
+# Export plain file assignments too; Morph resolves defaults for unset values.
+if [ -n "${XKB_DEFAULT_RULES+x}" ]; then export XKB_DEFAULT_RULES; fi
 if [ -n "${XKB_DEFAULT_LAYOUT+x}" ]; then export XKB_DEFAULT_LAYOUT; fi
 if [ -n "${XKB_DEFAULT_MODEL+x}" ]; then export XKB_DEFAULT_MODEL; fi
 if [ -n "${XKB_DEFAULT_VARIANT+x}" ]; then export XKB_DEFAULT_VARIANT; fi

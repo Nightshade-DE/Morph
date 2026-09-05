@@ -333,8 +333,86 @@ static int test_unresolved_config_path_can_use_builtin_fallback(void)
 }
 
 /** Execute all config parser regression tests; return non-zero on first failure. */
-int main(void)
-{
+/** Load a config fixture and check that failure never publishes partial state. */
+static struct comp_config *load_fixture(const char *text, bool expected) {
+	char path[128];
+	assert(write_temp_file(text, path, sizeof(path)));
+	struct comp_config *config = NULL;
+	assert(comp_config_load(path, &config) == expected);
+	assert(unlink(path) == 0);
+	assert(expected || config == NULL);
+	return config;
+}
+
+/** Cover RMLVO precedence, explicit empty values, and invalid keymap rejection. */
+static void test_keyboard_config(void) {
+	const char *vars[] = {"XKB_DEFAULT_RULES", "XKB_DEFAULT_MODEL", "XKB_DEFAULT_LAYOUT",
+		"XKB_DEFAULT_VARIANT", "XKB_DEFAULT_OPTIONS"};
+	for (size_t i = 0; i < sizeof(vars) / sizeof(vars[0]); i++) {
+		assert(unsetenv(vars[i]) == 0);
+	}
+	struct comp_config *config = load_fixture("[keyboard]\n", true);
+	assert(strcmp(config->keyboard.values[COMP_XKB_LAYOUT], "us") == 0);
+	assert(strcmp(config->keyboard.values[COMP_XKB_MODEL], "pc105") == 0);
+	assert(xkb_keymap_num_layouts(config->keyboard.keymap) == 1);
+	comp_config_free(config);
+	assert(setenv("XKB_DEFAULT_RULES", "evdev", 1) == 0);
+	assert(setenv("XKB_DEFAULT_MODEL", "pc104", 1) == 0);
+	assert(setenv("XKB_DEFAULT_LAYOUT", "de,us", 1) == 0);
+	assert(setenv("XKB_DEFAULT_VARIANT", "nodeadkeys,", 1) == 0);
+	assert(setenv("XKB_DEFAULT_OPTIONS", "grp:alt_shift_toggle", 1) == 0);
+	config = load_fixture("[keyboard]\n", true);
+	assert(strcmp(config->keyboard.values[COMP_XKB_MODEL], "pc104") == 0);
+	assert(strcmp(config->keyboard.values[COMP_XKB_RULES], "evdev") == 0);
+	assert(strcmp(config->keyboard.values[COMP_XKB_VARIANT], "nodeadkeys,") == 0);
+	assert(xkb_keymap_num_layouts(config->keyboard.keymap) == 2);
+	comp_config_free(config);
+	config = load_fixture("  [keyboard]  \n model = pc105\n layout = us,de\n variant = ,nodeadkeys\n options = \n", true);
+	assert(strcmp(config->keyboard.values[COMP_XKB_MODEL], "pc105") == 0);
+	assert(strcmp(config->keyboard.values[COMP_XKB_LAYOUT], "us,de") == 0);
+	assert(strcmp(config->keyboard.values[COMP_XKB_VARIANT], ",nodeadkeys") == 0);
+	assert(strcmp(config->keyboard.values[COMP_XKB_OPTIONS], "") == 0);
+	comp_config_free(config);
+	for (size_t i = 0; i < sizeof(vars) / sizeof(vars[0]); i++) {
+		assert(unsetenv(vars[i]) == 0);
+	}
+	const char *invalid[] = {
+		"[keyboard]\nunknown = us\n", "[keyboard]\nlayout = \n",
+		"[keyboard]\nmodel = \n", "[keyboard]\nrules = \n",
+		"[keyboard]\nrules = morph_nonexistent_rules\n",
+		"[keyboard]\nlayout = morph_nonexistent_layout\n",
+		"[keyboard]\nlayout = de,morph_nonexistent_layout\n",
+		"[keyboard]\nvariant = morph_nonexistent_variant\n",
+		"[keyboard]\nlayout = de,,us\n",
+		"[keyboard]\nlayout = us\nvariant = ,nodeadkeys\n",
+	};
+	for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
+		load_fixture(invalid[i], false);
+	}
+}
+
+/** Exercise the trim boundary and reject oversized physical lines before parsing. */
+static void test_line_boundaries(void) {
+	char line[4097];
+	memset(line, ' ', sizeof(line));
+	/* A valid section at the end of a maximum-length line exercises leading trim. */
+	memcpy(line + 4084, "[keyboard]", 10);
+	line[4094] = '\n';
+	line[4095] = '\0';
+	comp_config_free(load_fixture(line, true));
+	line[4094] = '\0';
+	comp_config_free(load_fixture(line, true));
+	memset(line, ' ', sizeof(line));
+	line[4095] = '\n';
+	line[4096] = '\0';
+	load_fixture(line, false);
+	line[4095] = '\0';
+	load_fixture(line, false);
+}
+
+int main(void) {
+	test_keyboard_config();
+	test_line_boundaries();
     if (test_valid_config_parse() != 0)
     {
         return 1;

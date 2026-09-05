@@ -10,7 +10,28 @@
 #include "keyboard.h"
 #include "server.h"
 
-/** Real wlroots keyboard with a seat grab recording compositor delivery. */
+/* Linker wrapping limits failure injection to calls made by this test target. */
+static bool fail_keymap_install;
+
+bool __real_wlr_keyboard_set_keymap(struct wlr_keyboard *keyboard, struct xkb_keymap *keymap);
+
+/** Inject installation failure without changing the runtime keyboard API. */
+bool __wrap_wlr_keyboard_set_keymap(struct wlr_keyboard *keyboard, struct xkb_keymap *keymap) {
+	return !fail_keymap_install && __real_wlr_keyboard_set_keymap(keyboard, keymap);
+}
+
+/** Keyboard-only capability stub; pointer/touch devices are outside this fixture. */
+void server_update_seat_capabilities(struct comp_server *server) {
+	wlr_seat_set_capabilities(server->seat,
+		wl_list_empty(&server->keyboards) ? 0 : WL_SEAT_CAPABILITY_KEYBOARD);
+}
+
+/**
+ * Real wlroots keyboard with a seat grab recording compositor delivery.
+ *
+ * The independent XKB state is the update oracle. The surface is only a target
+ * for the recording grab; this fixture does not create a Wayland client.
+ */
 struct keyboard_test {
 	struct comp_server server;
 	struct comp_keyboard keyboard;
@@ -29,7 +50,7 @@ struct keyboard_test {
 	uint32_t expected_mods;
 };
 
-/** Replace only binding actions; dispatch and state updates use production code. */
+/** Replace only binding actions; dispatch and state updates use runtime code. */
 bool comp_config_try_bindings(struct comp_config *cfg, struct comp_server *server,
 		bool pressed, uint32_t mods, xkb_keysym_t sym) {
 	(void)cfg;
@@ -46,6 +67,7 @@ bool comp_config_try_bindings(struct comp_config *cfg, struct comp_server *serve
 	return true;
 }
 
+/** Capture the held-key snapshot supplied by the compositor during a focus change. */
 static void record_enter(struct wlr_seat_keyboard_grab *grab,
 		struct wlr_surface *surface, const uint32_t keys[], size_t count,
 		const struct wlr_keyboard_modifiers *modifiers) {
@@ -58,6 +80,7 @@ static void record_enter(struct wlr_seat_keyboard_grab *grab,
 	}
 }
 
+/** Count forwarded keys and reject modifier delivery that precedes its raw key. */
 static void record_key(struct wlr_seat_keyboard_grab *grab, uint32_t time,
 		uint32_t key, uint32_t state) {
 	(void)time;
@@ -70,6 +93,7 @@ static void record_key(struct wlr_seat_keyboard_grab *grab, uint32_t time,
 	test->last_event = 'k';
 }
 
+/** Record modifier delivery and verify it carries the keyboard's current group. */
 static void record_modifiers(struct wlr_seat_keyboard_grab *grab,
 		const struct wlr_keyboard_modifiers *modifiers) {
 	struct keyboard_test *test = wl_container_of(grab, test, grab);
@@ -84,6 +108,7 @@ static const struct wlr_keyboard_grab_interface grab_interface = {
 	.modifiers = record_modifiers,
 };
 
+/** Build an isolated de,us fixture with runtime listeners and a recording seat grab. */
 static void test_init(struct keyboard_test *test) {
 	memset(test, 0, sizeof(*test));
 	test->server.wl_display = wl_display_create();
@@ -116,6 +141,7 @@ static void test_init(struct keyboard_test *test) {
 	wlr_seat_keyboard_start_grab(test->server.seat, &test->grab);
 }
 
+/** Remove fixture listeners before releasing its keyboard, XKB state, and display. */
 static void test_finish(struct keyboard_test *test) {
 	wlr_seat_keyboard_end_grab(test->server.seat);
 	wlr_seat_set_keyboard(test->server.seat, NULL);
@@ -156,6 +182,7 @@ static void send_key(struct keyboard_test *test, uint32_t key, bool pressed, boo
 		xkb_state_serialize_layout(test->reference, XKB_STATE_LAYOUT_EFFECTIVE));
 }
 
+/** Verify lock/modifier and group sequences for raw keys or backend-supplied masks. */
 static void test_state(bool raw) {
 	struct keyboard_test test;
 	test_init(&test);
@@ -178,6 +205,7 @@ static void test_state(bool raw) {
 	test_finish(&test);
 }
 
+/** Keep shortcut presses, repeats, and releases out of client delivery across focus changes. */
 static void test_consumed(void) {
 	struct keyboard_test test;
 	test_init(&test);
@@ -204,10 +232,59 @@ static void test_consumed(void) {
 	test_finish(&test);
 }
 
+/** Failed hotplug must preserve the active keyboard and leave no listeners behind. */
+static void test_lifecycle(void) {
+	struct comp_server server = {0};
+	struct comp_config config = {0};
+	server.config = &config;
+	server.wl_display = wl_display_create();
+	assert(server.wl_display);
+	server.seat = wlr_seat_create(server.wl_display, "lifecycle");
+	assert(server.seat);
+	wl_list_init(&server.keyboards);
+	assert(comp_keyboard_config_init(&config.keyboard));
+	assert(comp_keyboard_config_set(&config.keyboard, "rules", "evdev"));
+	assert(comp_keyboard_config_set(&config.keyboard, "layout", "de,us"));
+	assert(comp_keyboard_config_set(&config.keyboard, "variant", ""));
+	assert(comp_keyboard_config_compile(&config.keyboard));
+	struct wlr_keyboard first, second, rejected;
+	wlr_keyboard_init(&first, NULL, "first");
+	wlr_keyboard_init(&second, NULL, "second");
+	wlr_keyboard_init(&rejected, NULL, "rejected");
+	assert(comp_keyboard_add(&server, &first.base));
+	uint64_t first_id = ((struct comp_keyboard *)first.data)->id;
+	assert(comp_keyboard_add(&server, &second.base));
+	assert(((struct comp_keyboard *)second.data)->id > first_id);
+	assert(wlr_seat_get_keyboard(server.seat) == &second);
+	fail_keymap_install = true;
+	assert(!comp_keyboard_add(&server, &rejected.base));
+	fail_keymap_install = false;
+	assert(rejected.data == NULL && rejected.keymap == NULL);
+	assert(wl_list_empty(&rejected.events.key.listener_list));
+	assert(wl_list_empty(&rejected.base.events.destroy.listener_list));
+	assert(wl_list_length(&server.keyboards) == 2);
+	assert(wlr_seat_get_keyboard(server.seat) == &second);
+	wlr_keyboard_finish(&second);
+	assert(wlr_seat_get_keyboard(server.seat) == &first);
+	assert(wl_list_length(&server.keyboards) == 1);
+	assert(comp_keyboard_add(&server, &rejected.base));
+	assert(((struct comp_keyboard *)rejected.data)->id > first_id + 1);
+	comp_keyboard_clear(&server);
+	assert(wl_list_empty(&server.keyboards));
+	assert(first.data == NULL && rejected.data == NULL);
+	assert(wlr_seat_get_keyboard(server.seat) == NULL);
+	wlr_keyboard_finish(&first);
+	wlr_keyboard_finish(&rejected);
+	comp_keyboard_config_finish(&config.keyboard);
+	wl_display_destroy(server.wl_display);
+}
+
+/** Run dispatch and device-lifecycle regressions without starting a compositor backend. */
 int main(void) {
 	test_state(true);
 	test_state(false);
 	test_consumed();
+	test_lifecycle();
 	puts("keyboard tests passed");
 	return 0;
 }

@@ -27,6 +27,50 @@ This keeps `docs/CONFIG.md` focused on INI syntax and behavior.
 
 ---
 
+## Section `[keyboard]`
+
+All entries are optional. They override the corresponding `XKB_DEFAULT_*`
+environment variables for every keyboard attached to Morph.
+
+| Key | Meaning | Default when not configured or exported |
+| --- | --- | --- |
+| `rules` | XKB rules file | libxkbcommon system rules |
+| `model` | Keyboard model | `pc105` |
+| `layout` | Comma-separated layouts | `us` |
+| `variant` | Variants in layout order | No variants |
+| `options` | Comma-separated XKB options | No options |
+
+```ini
+[keyboard]
+layout = de,us
+model = pc105
+variant = nodeadkeys,
+options = grp:alt_shift_toggle
+```
+
+Empty `variant` and `options` values explicitly clear inherited settings.
+Fields inherit independently: when changing `layout`, clear or adjust an inherited
+`variant` if it no longer matches the new layout list.
+Empty `rules`, `model`, or `layout` entries are errors. Variant placeholders
+preserve layout order: `,nodeadkeys` applies `nodeadkeys` to the second layout.
+Fewer variant entries are allowed; extra entries and empty layout entries are errors.
+Keys are case-insensitive; repeated entries use the last value.
+
+Morph compiles the resolved keymap before starting the backend. XKB compilation
+errors reject the configuration, including cases where libxkbcommon could recover
+by dropping a requested layout. Invalid hotplug installation leaves the session
+and existing keyboards intact. Rules determine supported model and option names;
+Morph does not maintain a separate XKB registry.
+
+During phase 2, changed keyboard settings require restarting Morph. A reload that
+changes them is rejected in full; other config reloads continue to work. Applying
+new keymaps to existing devices is planned for phase 3. Reload does not re-source
+launcher environment files. The shipped environment still selects `de,us` unless
+overridden; `us` is the fallback when no layout is supplied.
+
+Physical configuration lines may contain at most 4094 bytes before the newline.
+Oversized lines and read failures reject the file rather than partially applying it.
+
 ## Section `[bind]`
 
 Each `[bind]` block describes **one** shortcut. Start a new `[bind]` section for each binding.
@@ -39,7 +83,7 @@ Each `[bind]` block describes **one** shortcut. Start a new `[bind]` section for
 | **`command`** | For some actions | Shell command line for **`exec`**, or parameter for **`tile_move`** / **`tile_grid_move`** as documented below. |
 | **`when`** | No | If set, **`/bin/sh -c '…'`** is run **on every key press** before the bind is considered; **exit status 0** means the bind is active. Non-zero skips the bind. The shell sees **[`MORPH_LAYOUT`](ENVIRONMENT.md#morph-layout)** as `stack`, `tile`, or `scroll`, and **[`MORPH_WORKSPACE`](ENVIRONMENT.md#morph-workspace)** as the current workspace number **`1`**..**`9`** (decimal string). |
 
-Bindings are matched using modifier and keysym sampled **before** the compositor updates XKB state from the key event, so the chord matches what the user pressed.
+Bindings are matched using modifier and keysym sampled **before** wlroots updates XKB state from the key event, so the chord matches what the user pressed.
 
 ### Layout-aware `when` example
 

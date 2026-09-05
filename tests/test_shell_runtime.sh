@@ -935,6 +935,71 @@ test_system_uninstall_prints_manifest_without_removing() {
     trap - EXIT HUP INT TERM
 }
 
+# Verify all five XKB fields through both launchers using a stub compositor.
+# Reading a child process's environment catches missing exports as well as
+# priority errors; the caller case also checks that empty options clear defaults.
+test_xkb_environment_in_both_launchers() {
+    tmpdir=$(make_tmpdir)
+    trap 'rm -rf "$tmpdir"' EXIT HUP INT TERM
+    mkdir -p "$tmpdir/system" "$tmpdir/user/morph" "$tmpdir/state"
+    printf '[keyboard]\n' > "$tmpdir/system/morph.conf"
+    cat > "$tmpdir/system/environment" <<'EOF'
+XKB_DEFAULT_RULES=system-rules
+XKB_DEFAULT_MODEL=system-model
+XKB_DEFAULT_LAYOUT=system-layout
+XKB_DEFAULT_VARIANT=system-variant
+XKB_DEFAULT_OPTIONS=system-options
+EOF
+    cat > "$tmpdir/compositor" <<'EOF'
+#!/bin/sh
+printf '%s\n' "${XKB_DEFAULT_RULES-unset}" "${XKB_DEFAULT_MODEL-unset}" \
+    "${XKB_DEFAULT_LAYOUT-unset}" "${XKB_DEFAULT_VARIANT-unset}" \
+    "${XKB_DEFAULT_OPTIONS-unset}" > "$XKB_TEST_OUTPUT"
+EOF
+    chmod +x "$tmpdir/compositor"
+
+    for launcher in "$repo_root/scripts/morph-session" "$repo_root/testing/morph-session_dbg"; do
+        for layer in system user caller; do
+            if [ "$layer" = system ]; then
+                rm -f "$tmpdir/user/morph/environment"
+            else
+                cat > "$tmpdir/user/morph/environment" <<'EOF'
+XKB_DEFAULT_RULES=user-rules
+XKB_DEFAULT_MODEL=user-model
+XKB_DEFAULT_LAYOUT=user-layout
+XKB_DEFAULT_VARIANT=user-variant
+XKB_DEFAULT_OPTIONS=user-options
+EOF
+            fi
+            set --
+            if [ "$layer" = caller ]; then
+                set -- XKB_DEFAULT_RULES=caller-rules XKB_DEFAULT_MODEL=caller-model \
+                    XKB_DEFAULT_LAYOUT=caller-layout XKB_DEFAULT_VARIANT=caller-variant \
+                    XKB_DEFAULT_OPTIONS=
+            fi
+            env -u XKB_DEFAULT_RULES -u XKB_DEFAULT_MODEL -u XKB_DEFAULT_LAYOUT \
+                -u XKB_DEFAULT_VARIANT -u XKB_DEFAULT_OPTIONS -u DISPLAY -u WAYLAND_DISPLAY \
+                MORPH_ENV_FILE="$tmpdir/system/environment" \
+                XDG_CONFIG_HOME="$tmpdir/user" XDG_STATE_HOME="$tmpdir/state" \
+                MORPH_SYSTEM_CONFIG_DIR="$tmpdir/system" \
+                MORPH_SYSTEM_CONFIG_FILE="$tmpdir/system/morph.conf" \
+                MORPH_CONFIG="$tmpdir/system/morph.conf" MORPH_SYSTEM_HOOK_DIR="$repo_root/scripts" \
+                MORPH_BIN="$tmpdir/compositor" MORPH_RESOLVE_ONLY=0 \
+                XKB_TEST_OUTPUT="$tmpdir/values" "$@" sh "$launcher" > "$tmpdir/launcher.out" 2>&1
+            assert_equals "$layer-rules" "$(sed -n '1p' "$tmpdir/values")" "$layer rules"
+            assert_equals "$layer-model" "$(sed -n '2p' "$tmpdir/values")" "$layer model"
+            assert_equals "$layer-layout" "$(sed -n '3p' "$tmpdir/values")" "$layer layout"
+            assert_equals "$layer-variant" "$(sed -n '4p' "$tmpdir/values")" "$layer variant"
+            expected_options="$layer-options"
+            if [ "$layer" = caller ]; then expected_options=""; fi
+            assert_equals "$expected_options" "$(sed -n '5p' "$tmpdir/values")" "$layer options"
+        done
+    done
+    rm -rf "$tmpdir"
+    trap - EXIT HUP INT TERM
+}
+
+test_xkb_environment_in_both_launchers
 test_launch_helpers_track_expected_processes
 test_reload_helper_restarts_without_duplicate_shutdown_entries
 test_reload_once_starts_component_when_missing
