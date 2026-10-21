@@ -437,9 +437,6 @@ static inline void server_request_terminate(struct comp_server *server, const ch
 
 bool server_init(struct comp_server *server);
 
-/** Wire keyboard key/modifier listeners for a physical or virtual keyboard device. */
-void server_keyboard_register(struct comp_server *server, struct wlr_keyboard *wlr_kbd);
-
 /** Refresh wl_seat capability flags from attached input devices. */
 void server_update_seat_capabilities(struct comp_server *server);
 

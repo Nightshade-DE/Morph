@@ -11,6 +11,7 @@
 #include <wlr/util/log.h>
 
 #include "server.h"
+#include "keyboard.h"
 
 static void handle_new_virtual_pointer(struct wl_listener *listener, void *data)
 {
@@ -38,8 +39,7 @@ static void handle_new_virtual_keyboard(struct wl_listener *listener, void *data
 	struct wlr_virtual_keyboard_v1 *keyboard = data;
 	struct wlr_keyboard *wlr_kbd = &keyboard->keyboard;
 
-	server_keyboard_register(server, wlr_kbd);
-	server_update_seat_capabilities(server);
+	comp_keyboard_add(server, &wlr_kbd->base);
 }
 
 bool virtual_input_init(struct comp_server *server)
