@@ -44,6 +44,23 @@ These decisions provide the basis for implementation and tests.
   `xkb_keymap_layout_get_name()` is not treated as a source of `de`/`us` codes;
   unknown short identifiers are explicitly represented as unavailable.
 
+## Manual acceptance report
+
+Maintain [report_current.md](report_current.md) during every phase. After each
+implemented phase, the maintainer runs C0 and the relevant core and extended
+checks on a separate Debian Sid laptop.
+
+Only after implementation is complete, run selected checks on Arch/CachyOS Xfce
+and Fedora 44 Xfce. The current final selection C0-C4 targets dependencies,
+XKB data, and client/backend behavior. Add other checks only for relevant
+differences or findings. Repeat E1/E2 for different backends or hardware.
+
+Before completing each phase, add executable steps and expected results for its
+report IDs. Execute the Debian matrix entries after their phase; execute the
+Arch/Fedora entries in the final native round. Preserve results and commit IDs;
+at release, rerun C0 and checks affected by later changes on Debian. Keep both
+report languages aligned.
+
 ## Phase 1: Correct event processing
 
 Priority: high. Dependencies: none. Finding: XKB-01.
@@ -65,6 +82,8 @@ Verify native and nested input separately.
 Implementation status: phase 1 code and automated regression tests are complete
 on `feature/xkb-full-support`. Build and all three Meson tests pass with wlroots
 0.19.3. Actual native/nested session checks remain open; see `docs/TESTS.md`.
+
+Manual acceptance: [report_current.md](report_current.md), **C1 / E1**.
 
 ## Phase 2: Configuration and keymap lifecycle
 
@@ -93,6 +112,8 @@ Both launchers are tested with system/user/caller values. Actual device hotplug
 and native/nested session checks remain manual acceptance work. Changed keyboard
 settings currently require a restart; live replacement is phase 3.
 
+Manual acceptance: [report_current.md](report_current.md), **C2 / E2-E3**.
+
 ## Phase 3: Client synchronization and keymap reload
 
 Priority: high. Dependencies: phases 1 and 2. Finding: part of XKB-04.
@@ -114,6 +135,8 @@ Acceptance: clients see the same effective group as Morph. A failed reload
 preserves the previous working configuration; successful reloads require
 neither client restarts nor reconnecting keyboards.
 
+Manual acceptance: [report_current.md](report_current.md), **C3 / E4**.
+
 ## Phase 4: Layout-independent shortcuts
 
 Priority: medium. Dependencies: phases 1 and 2. Finding: XKB-02.
@@ -130,6 +153,8 @@ Entry points: `src/main.c:4693`, `src/config.c:605`, `src/config.c:630`.
 Acceptance: Y/Z, punctuation, and Latin-letter shortcuts work on the same primary
 keys with `de,us` and `us,ru`. Shift shortcuts remain distinguishable;
 normal text input continues to use the active group.
+
+Manual acceptance: [report_current.md](report_current.md), **C4 / E5**.
 
 ## Phase 5: Runtime control and state model
 
@@ -151,6 +176,8 @@ Acceptance: two keyboards with different groups retain defined states.
 Single-layout configurations, wraparound, and invalid indices work without
 side effects on modifiers or window layouts.
 
+Manual acceptance: [report_current.md](report_current.md), **C5 / E6**.
+
 ## Phase 6: IPC and CLI
 
 Priority: medium. Dependency: phase 5; fix GEN-01 before release.
@@ -169,6 +196,8 @@ Entry points: `src/main.c:4302`, `src/main.c:4539`.
 Acceptance: idle connections, fragmented messages, and slow subscribers do not
 block the session. A panel can track initial state, group changes, reload,
 and hotplug without polling.
+
+Manual acceptance: [report_current.md](report_current.md), **C6 / E7**.
 
 ## Phase 7: Regression tests and release
 
@@ -191,6 +220,8 @@ Dependencies: all preceding phases. Add tests alongside each implementation phas
   `docs/TESTS.md`, and the manual test plan; keep both roadmaps synchronized.
 - [ ] Explain RMLVO (Rules, Model, Layout, Variant, Options) in user documentation
   with a complete example, including variant placeholders and group switching.
+
+Manual acceptance: [report_current.md](report_current.md), **C0-C6 / E8**.
 
 ## Completion criteria and order
 

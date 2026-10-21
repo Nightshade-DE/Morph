@@ -72,23 +72,16 @@ For shell-runtime failures, also inspect runtime logs under:
 ## Keyboard Phase 1 Validation
 
 Run the automated regression test with `meson test -C build keyboard -v`.
-It compares the production keyboard dispatch against an independent XKB state.
+It compares the runtime keyboard dispatch against an independent XKB state.
 Binding actions are stubbed; a seat grab records delivery without a display server.
 Both `update_state=true` and `update_state=false` paths are covered. This does not
 replace testing actual backend input or observing client protocol traffic.
 
-Manual checks, separately in native and nested sessions:
-
-1. Use `de,us` with `grp:alt_shift_toggle`; cycle six times and verify Y/Z input
-   in a terminal after each switch.
-2. Press and release Shift, CapsLock, AltGr, and Super; verify no modifier remains
-   active after release and CapsLock toggles once per press.
-3. Hold a normal key and verify client repeat still works and stops on release.
-4. Trigger a compositor shortcut that changes workspace/focus; release its keys
-   after the focus change. The destination client must not receive the shortcut key.
-5. Switch between a normal window and a keyboard-interactive layer surface while
-   holding a consumed shortcut. Verify it does not start repeating in the new client.
-6. Record backend, wlroots version, bindings used, and result in the test report.
+Manual acceptance is tracked in [report_current.md](../report_current.md):
+test this phase first on the development system, preferably nested, with runtime
+and dbg where relevant. Repeat the phase 1 checks on Debian Sid in a native Morph
+session, then run the relevant native checks on Arch/Fedora after implementation.
+Keep results in `report_current.md`.
 
 Phase 1 implementation check (2026-09-05, wlroots 0.19.3):
 
@@ -109,20 +102,11 @@ Automated checks (2026-09-05, wlroots 0.19.3):
 - Launcher tests run a stub executable to inspect the actual exported environment
   for both wrappers. They do not start a graphical session or managed services.
 
-Manual acceptance:
-
-1. Start with `layout = de,us` and `variant = nodeadkeys,` in `[keyboard]`;
-   verify text input and native group switching in a text editor.
-2. Override inherited options using an empty `options =` entry; restart and verify
-   that the inherited group-switch combination no longer applies.
-3. Attach two keyboards, then remove the active one. Verify input still works
-   through the remaining device. Remove/reconnect the last keyboard as well.
-4. Try a nonexistent layout in a separate test config. Startup must fail with an
-   XKB error before starting the backend. Restore the valid config afterward.
-5. Change a keyboard setting and request config reload. In phase 2, the reload
-   must be rejected and the current session configuration must remain active.
-6. Repeat device and input checks in native and nested sessions. Record results;
-   these manual checks have not yet been performed for phase 2.
+Manual acceptance is tracked in [report_current.md](../report_current.md):
+test configuration, hotplug, and rejection paths first on the development system,
+preferably nested. Repeat the relevant phase 2 checks on Debian in a native Morph
+session and on Arch/Fedora in the final native round. Update the reload check when
+phase 3 replaces rejection with live keymap updates.
 
 ## Related Documentation
 

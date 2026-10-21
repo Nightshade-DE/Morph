@@ -25,6 +25,51 @@ static void keyboard_remove(struct comp_keyboard *kbd) {
 	free(kbd);
 }
 
+static bool keyboard_debug_enabled(void) {
+	const char *value = getenv("MORPH_LOG_KEYS");
+	return value && value[0] && strcmp(value, "0") != 0;
+}
+
+static void keyboard_note_group_action(struct comp_keyboard *kbd, xkb_keysym_t sym) {
+	if (kbd->layout_count <= 1) {
+		return;
+	}
+	xkb_layout_index_t group = kbd->group_lock_active ? kbd->locked_group :
+		wlr_keyboard_from_input_device(kbd->dev)->modifiers.group;
+	switch (sym) {
+	case XKB_KEY_ISO_Next_Group:
+	case XKB_KEY_ISO_Next_Group_Lock:
+		group = (group + 1) % kbd->layout_count;
+		break;
+	case XKB_KEY_ISO_Prev_Group:
+	case XKB_KEY_ISO_Prev_Group_Lock:
+		group = group == 0 ? kbd->layout_count - 1 : group - 1;
+		break;
+	case XKB_KEY_ISO_First_Group:
+	case XKB_KEY_ISO_First_Group_Lock:
+		group = 0;
+		break;
+	case XKB_KEY_ISO_Last_Group:
+	case XKB_KEY_ISO_Last_Group_Lock:
+		group = kbd->layout_count - 1;
+		break;
+	default:
+		return;
+	}
+	kbd->locked_group = group;
+	kbd->group_lock_active = true;
+}
+
+static void keyboard_stabilize_group(struct comp_keyboard *kbd, struct wlr_keyboard *wlr_kbd) {
+	if (!kbd->group_lock_active || !wlr_kbd->xkb_state || kbd->locked_group >= kbd->layout_count ||
+		wlr_kbd->modifiers.group == kbd->locked_group) {
+		return;
+	}
+	xkb_state_update_mask(wlr_kbd->xkb_state, wlr_kbd->modifiers.depressed,
+		wlr_kbd->modifiers.latched, wlr_kbd->modifiers.locked, 0, 0, kbd->locked_group);
+	wlr_kbd->modifiers.group = kbd->locked_group;
+}
+
 /**
  * Handle backend device destruction while the seat is still available.
  *
@@ -72,6 +117,7 @@ bool comp_keyboard_add(struct comp_server *server, struct wlr_input_device *devi
 	kbd->server = server;
 	kbd->dev = device;
 	kbd->id = ++server->next_keyboard_id;
+	kbd->layout_count = xkb_keymap_num_layouts(keyboard->keymap);
 	kbd->destroy.notify = keyboard_destroy;
 	kbd->key.notify = comp_keyboard_handle_key;
 	kbd->modifiers.notify = comp_keyboard_handle_modifiers;
@@ -143,14 +189,15 @@ void comp_keyboard_handle_key(struct wl_listener *listener, void *data) {
 		}
 	}
 	if (pressed) {
-		const char *kdbg = getenv("MORPH_LOG_KEYS");
-		if (kdbg && kdbg[0] && strcmp(kdbg, "0") != 0 && sym != XKB_KEY_NoSymbol) {
+		if (keyboard_debug_enabled() && sym != XKB_KEY_NoSymbol) {
 			char name[128];
 			if (xkb_keysym_get_name(sym, name, sizeof(name)) < 0) {
 				snprintf(name, sizeof(name), "(bad)");
 			}
-			wlr_log(WLR_INFO, "keyboard: keysym=%s mods=0x%x", name, mods_filtered);
+			wlr_log(WLR_INFO, "keyboard: keycode=%u keysym=%s mods=0x%x update_state=%d",
+				event->keycode, name, mods_filtered, event->update_state);
 		}
+		keyboard_note_group_action(kbd, sym);
 	}
 
 	wlr_seat_set_keyboard(kbd->server->seat, wlr_kbd);
@@ -185,6 +232,13 @@ void comp_keyboard_handle_modifiers(struct wl_listener *listener, void *data) {
 	}
 	struct wlr_keyboard *wlr_kbd = wlr_keyboard_from_input_device(kbd->dev);
 	wlr_seat_set_keyboard(kbd->server->seat, wlr_kbd);
+	keyboard_stabilize_group(kbd, wlr_kbd);
+	if (keyboard_debug_enabled()) {
+		wlr_log(WLR_INFO, "keyboard: modifiers depressed=0x%x latched=0x%x locked=0x%x group=%u effective=0x%x",
+			(unsigned)wlr_kbd->modifiers.depressed, (unsigned)wlr_kbd->modifiers.latched,
+			(unsigned)wlr_kbd->modifiers.locked, (unsigned)wlr_kbd->modifiers.group,
+			wlr_keyboard_get_modifiers(wlr_kbd));
+	}
 	wlr_seat_keyboard_notify_modifiers(kbd->server->seat, &wlr_kbd->modifiers);
 	if ((wlr_keyboard_get_modifiers(wlr_kbd) & WLR_MODIFIER_LOGO) == 0) {
 		kbd->server->suppress_logo_pointer_drag = false;

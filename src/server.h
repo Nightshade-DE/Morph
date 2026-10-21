@@ -184,6 +184,14 @@ struct comp_keyboard {
 	struct wl_listener modifiers;
 	struct comp_server *server;
 	struct wlr_input_device *dev;
+	/*
+	 * ISO group actions are lock-style layout switches. Some backend paths can
+	 * report a transient group reset while the trigger modifiers are released;
+	 * keep the intended locked group so the seat and following keysyms agree.
+	 */
+	xkb_layout_index_t locked_group;
+	xkb_layout_index_t layout_count;
+	bool group_lock_active;
 	/* Held shortcut keys stay consumed until release, even across focus changes. */
 	uint32_t consumed[WLR_KEYBOARD_KEYS_CAP];
 	size_t num_consumed;

@@ -131,6 +131,7 @@ static void test_init(struct keyboard_test *test) {
 	xkb_context_unref(ctx);
 	test->keyboard.server = &test->server;
 	test->keyboard.dev = &test->wlr.base;
+	test->keyboard.layout_count = xkb_keymap_num_layouts(test->wlr.keymap);
 	test->wlr.data = &test->keyboard;
 	test->keyboard.key.notify = comp_keyboard_handle_key;
 	test->keyboard.modifiers.notify = comp_keyboard_handle_modifiers;
@@ -182,6 +183,27 @@ static void send_key(struct keyboard_test *test, uint32_t key, bool pressed, boo
 		xkb_state_serialize_layout(test->reference, XKB_STATE_LAYOUT_EFFECTIVE));
 }
 
+/** Reproduce backend modifier updates that lose the group selected by ISO_Next_Group. */
+static void test_group_reset_stabilized(void) {
+	struct keyboard_test test;
+	test_init(&test);
+	send_key(&test, KEY_LEFTSHIFT, true, true);
+	send_key(&test, KEY_LEFTALT, true, true);
+	assert(test.wlr.modifiers.group == 1);
+	xkb_mod_mask_t depressed = xkb_state_serialize_mods(test.reference, XKB_STATE_MODS_DEPRESSED);
+	xkb_mod_mask_t latched = xkb_state_serialize_mods(test.reference, XKB_STATE_MODS_LATCHED);
+	xkb_mod_mask_t locked = xkb_state_serialize_mods(test.reference, XKB_STATE_MODS_LOCKED);
+	wlr_keyboard_notify_modifiers(&test.wlr, depressed, latched, locked, 0);
+	xkb_state_update_mask(test.reference, depressed, latched, locked, 0, 0, 1);
+	assert(test.wlr.modifiers.group == 1);
+	assert(xkb_state_serialize_layout(test.wlr.xkb_state, XKB_STATE_LAYOUT_EFFECTIVE) == 1);
+	send_key(&test, KEY_LEFTALT, false, true);
+	send_key(&test, KEY_LEFTSHIFT, false, true);
+	assert(test.wlr.modifiers.group == 1);
+	assert(xkb_state_key_get_one_sym(test.wlr.xkb_state, KEY_Z + 8) == XKB_KEY_z);
+	test_finish(&test);
+}
+
 /** Verify lock/modifier and group sequences for raw keys or backend-supplied masks. */
 static void test_state(bool raw) {
 	struct keyboard_test test;
@@ -198,7 +220,14 @@ static void test_state(bool raw) {
 		send_key(&test, KEY_LEFTALT, false, raw);
 		assert(test.wlr.modifiers.group == (i + 1) % 2);
 	}
-	assert(test.keys == 34);
+	for (unsigned i = 0; i < 6; i++) {
+		send_key(&test, KEY_LEFTSHIFT, true, raw);
+		send_key(&test, KEY_LEFTALT, true, raw);
+		send_key(&test, KEY_LEFTALT, false, raw);
+		send_key(&test, KEY_LEFTSHIFT, false, raw);
+		assert(test.wlr.modifiers.group == (i + 1) % 2);
+	}
+	assert(test.keys == 58);
 	assert(test.modifiers > 0);
 	assert(test.wlr.modifiers.depressed == 0);
 	assert(test.wlr.num_keycodes == 0);
@@ -283,6 +312,7 @@ static void test_lifecycle(void) {
 int main(void) {
 	test_state(true);
 	test_state(false);
+	test_group_reset_stabilized();
 	test_consumed();
 	test_lifecycle();
 	puts("keyboard tests passed");
