@@ -80,8 +80,9 @@ Acceptance: press/release sequences, CapsLock, AltGr, and repeated
 Verify native and nested input separately.
 
 Implementation status: phase 1 code and automated regression tests are complete
-on `feature/xkb-full-support`. Build and all three Meson tests pass with wlroots
-0.19.3. Actual native/nested session checks remain open; see `docs/TESTS.md`.
+on `feature/xkb-full-support`. The current development build and all three Meson
+tests pass with wlroots 0.20.2. Actual native/nested session checks remain open;
+see `docs/TESTS.md`.
 
 Manual acceptance: [report_current.md](report_current.md), **C1 / E1**.
 

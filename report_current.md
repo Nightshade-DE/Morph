@@ -219,6 +219,262 @@ Expected: explicit config overrides the environment, including an empty value.
 Rules/model/variant validation and parser boundaries are covered by C0 rather
 than a separate per-distribution manual matrix.
 
+## Phase-specific manual checklist
+
+These steps keep the English report aligned with the detailed German report.
+Run them on the development system first, preferably nested, and repeat the
+relevant completed phase on Debian Sid in a native Morph session. Record the
+commit, build variant, mode, backend, log path, and result in the findings table.
+
+### Phase 1: Input and modifiers
+
+1. Start the temporary `de,us` fixture and verify the startup log, terminal
+   binding, and clean exit.
+2. Type on the Y/Z key positions and press Alt+Shift repeatedly. The log must
+   show one `ISO_Next_Group` event per toggle and the text must alternate between
+   the German and US groups.
+3. Press and release Shift, CapsLock, AltGr, and NumLock if available. No
+   modifier may remain stuck; CapsLock must toggle once per press.
+4. Hold a letter until client repeat starts, then release it. Repeat must stop.
+5. Move focus between two clients while typing. Input must follow the focused
+   client, and a consumed compositor shortcut must not leak into the destination.
+6. Run the same input procedure with the dbg launcher and the runtime launcher.
+   Differences in diagnostic output are expected; behavior must match.
+
+Expected: no duplicate state updates, no stuck modifiers, correct group changes,
+working repeat, and a clean compositor exit.
+
+### Phase 2: Configuration and devices
+
+1. Set an environment layout that differs from `layout = de,us`. The explicit
+   config value must win. Repeat with `options =` to verify that an empty config
+   value disables inherited options.
+2. Attach two keyboards and type with each. Remove the active device; the
+   remaining keyboard must continue to work. Reconnect the last device and
+   verify that input returns without restarting Morph.
+3. Start a copy with an invalid layout. Startup must fail with a clear XKB error
+   before the backend starts.
+4. Change a keyboard setting and request reload. During phase 2 the reload must
+   be rejected and the previous working layout must remain active. Replace this
+   check with the live-reload procedure when phase 3 is implemented.
+
+Expected: all five RMLVO fields resolve consistently, invalid keymaps fail
+  visibly, device lifecycle remains safe, and phase-2 reload rejection preserves
+  the active configuration.
+
+## Later phases not yet implemented
+
+Prepare these checks on the development system first and run the corresponding
+native distro checks after each phase is implemented.
+
+### Phase 3: Keymap reload and clients
+
+With the current phase-2 implementation, a keyboard reload is expected to print:
+
+```text
+reload: keyboard settings changed; restart Morph to apply them
+ipc: config reload failed
+```
+
+This is the phase-2 guard, not a failed test. Phase 3.1 becomes executable only
+when valid keyboard changes are accepted by the reload path.
+
+### Phase 3 preparation: start and reload calls
+
+Use the same `MORPH_TEST_ROOT` in both terminals:
+
+```bash
+cd ~/workset/Morph_xkb
+export MORPH_TEST_ROOT=/tmp/morph-xkb-report.YOUR_ID
+export MORPH_TEST_BIN="$PWD/build_dbg/morph"
+export MORPH_PHASE3_LOG="$MORPH_TEST_ROOT/dbg-nested-phase3-reload.log"
+```
+
+Terminal A starts Morph and displays the log while saving it:
+
+```bash
+env -u WLR_BACKENDS MORPH_LOG_KEYS=1 "$MORPH_TEST_BIN" --log-level info \
+    --config "$MORPH_TEST_ROOT/morph.conf" \
+    2>&1 | tee "$MORPH_PHASE3_LOG"
+```
+
+Terminal B triggers the reload through the IPC socket:
+
+```bash
+"$MORPH_TEST_BIN" --reload-config
+```
+
+For a valid reordered-group reload, use:
+
+```ini
+[keyboard]
+layout = us,de
+variant = ,nodeadkeys
+options = grp:alt_shift_toggle
+```
+
+For the invalid reload, use `layout = invalid_morph_layout`. Inspect the live
+messages or run:
+
+```bash
+rg -n "reload:|keyboard:|ipc: config reload" "$MORPH_PHASE3_LOG"
+```
+
+### Phase 3.1: Valid reload with open clients
+
+Open two clients, type Y/Z, change the active config to `us,de`, and trigger the
+reload from terminal B. Existing clients and a newly opened client must use the
+new keymap; Alt+Shift must still switch between the configured groups.
+
+### Phase 3.2: Invalid reload preserves the old keymap
+
+Change only the layout to `invalid_morph_layout` and trigger reload. Morph must
+reject it, keep the previous keymap, and leave both open clients usable.
+
+### Phase 3.3: Reload with held modifiers
+
+Run `sleep 5; "$MORPH_TEST_BIN" --reload-config` in terminal B, then hold Shift
+in the Morph session until the reload message appears. Release it and repeat with
+Alt and Ctrl+Super+Alt. Reload must not hang, and no modifier may remain active.
+
+### Phase 3.4: Reordered groups and two keyboards
+
+Use two physical keyboards, test Y/Z with each, reorder `de,us` to `us,de` with
+the position-matching variant list, and reload. Both keyboards must receive the
+new keymap and follow the new group order.
+
+### Phases 4-7
+
+- Phase 4: bind actions to primary Y/Z and Latin-letter keys; verify `de,us`,
+  `us,ru`, punctuation, Shift, AltGr, consumed modifiers, and compatibility mode.
+- Phase 5: exercise next, previous, valid and invalid indices, device targeting,
+  removed IDs, and one-layout wraparound.
+- Phase 6: verify snapshots, ordered events, fragmented requests, slow readers,
+  reconnects, and non-blocking editor input.
+- Phase 7: rerun affected Debian checks, run the selected native Arch/Fedora
+  checks, and review backend, sanitizer, RMLVO, and user-documentation coverage.
+
+## Distro tests
+
+Run the relevant completed-phase checks in this order: Debian Sid after each
+phase, then the selected native checks on Arch/CachyOS and Fedora after the full
+implementation. Record the commit, build variant, native mode, backend,
+hardware, wlroots/libxkbcommon versions, and evidence. Use the same physical key
+positions for the shared input comparison on every distribution.
+
+The following helpers are only for native distro tests. Copy them into the test
+machine's `.bashrc`, run `source ~/.bashrc`, and start from the repository root:
+
+```bash
+morph_xkb_prepare() {
+    cd ~/workset/Morph_xkb || return
+
+    export MORPH_TEST_ROOT="${MORPH_TEST_ROOT:-$(mktemp -d /tmp/morph-xkb-report.XXXXXX)}"
+    export MORPH_TEST_BIN="${MORPH_TEST_BIN:-$PWD/build/morph}"
+    export MORPH_TEST_LOG="${MORPH_TEST_LOG:-$MORPH_TEST_ROOT/runtime-native.log}"
+    export TERMINAL="${TERMINAL:-alacritty}"
+
+    cat > "$MORPH_TEST_ROOT/morph.conf" <<'CONFIG'
+[keyboard]
+rules = evdev
+model = pc105
+layout = de,us
+variant = nodeadkeys,
+options = grp:alt_shift_toggle
+
+[bind]
+mods = Super
+key = Return
+action = exec
+command = ${TERMINAL:-foot}
+
+[bind]
+mods = Ctrl+Super+Alt
+key = Escape
+action = quit
+
+[bind]
+mods = Ctrl+Super+Alt
+key = 1
+action = workspace_goto
+command = 1
+
+[bind]
+mods = Ctrl+Super+Alt
+key = 2
+action = workspace_goto
+command = 2
+CONFIG
+
+    printf 'MORPH_TEST_ROOT=%s\n' "$MORPH_TEST_ROOT"
+    printf 'MORPH_TEST_BIN=%s\n' "$MORPH_TEST_BIN"
+    printf 'MORPH_TEST_LOG=%s\n' "$MORPH_TEST_LOG"
+}
+
+morph_xkb_native() {
+    morph_xkb_prepare || return
+
+    env -u DISPLAY -u WAYLAND_DISPLAY -u WLR_BACKENDS MORPH_LOG_KEYS=1 \
+        "$MORPH_TEST_BIN" --log-level info \
+        --config "$MORPH_TEST_ROOT/morph.conf" \
+        2>&1 | tee "$MORPH_TEST_LOG"
+
+    return "${PIPESTATUS[0]}"
+}
+
+morph_xkb_reload() {
+    if [ -z "$MORPH_TEST_BIN" ]; then
+        cd ~/workset/Morph_xkb || return
+        export MORPH_TEST_BIN="$PWD/build/morph"
+    fi
+
+    "$MORPH_TEST_BIN" --reload-config
+}
+
+morph_xkb_invalid_layout() {
+    morph_xkb_prepare || return
+
+    awk '
+        /^layout[[:space:]]*=/ { print "layout = invalid_morph_layout"; next }
+        { print }
+    ' "$MORPH_TEST_ROOT/morph.conf" > "$MORPH_TEST_ROOT/runtime-invalid-layout.conf"
+
+    env -u DISPLAY -u WAYLAND_DISPLAY -u WLR_BACKENDS \
+        "$MORPH_TEST_BIN" --log-level info \
+        --config "$MORPH_TEST_ROOT/runtime-invalid-layout.conf" \
+        2>&1 | tee "$MORPH_TEST_ROOT/runtime-invalid-layout.log"
+
+    return "${PIPESTATUS[0]}"
+}
+
+morph_xkb_logs() {
+    if [ -z "$MORPH_TEST_ROOT" ]; then
+        printf 'Set MORPH_TEST_ROOT first with mxkb-prepare.\n' >&2
+        return 1
+    fi
+
+    rg -n "keyboard:|reload:|ipc:|XKB:|Failed|ERROR" "$MORPH_TEST_ROOT"
+}
+
+alias mxkb-prepare='morph_xkb_prepare'
+alias mxkb-native='morph_xkb_native'
+alias mxkb-reload='morph_xkb_reload'
+alias mxkb-invalid='morph_xkb_invalid_layout'
+alias mxkb-logs='morph_xkb_logs'
+```
+
+Typical distro flow:
+
+```bash
+mxkb-prepare
+mxkb-native
+mxkb-logs
+```
+
+Run `mxkb-native` in terminal A and `mxkb-reload` in terminal B for the phase-2
+reload guard. Run `mxkb-invalid` for the invalid-layout check; errors are shown
+in the terminal and saved under `MORPH_TEST_ROOT`.
+
 ## Extended checks: development first, hardware native
 
 | ID | Phase | Check | Status | Distribution/backend, commit, evidence |
@@ -318,6 +574,7 @@ Add one row per result or defect; preserve earlier rows when retesting.
 
 | Test ID | Commit/date | Distribution/backend | Result | Observation / log path / follow-up |
 | --- | --- | --- | --- | --- |
+| C1 / phase 1.2 | 2026-09-10 | Development system / nested / dbg | PASS | After the group-stability fix, `group=1` remains stable and Y/Z keysyms alternate between the German and US groups. Log: `/tmp/morph-xkb-report.Y4qWcr/dbg-nested-group-fix.log` |
 | pending | pending | pending | OPEN | No manual results recorded yet |
 
 ## Final acceptance
