@@ -132,12 +132,13 @@ bool output_mgmt_init(struct comp_server *server)
 	return true;
 }
 
-void output_mgmt_fini(struct comp_server *server)
-{
-	if (!server || !server->output_manager)
-	{
+/** Disable configuration publication before backend outputs and display globals are freed. */
+void output_mgmt_fini(struct comp_server *server) {
+	if (!server || !server->output_manager) {
 		return;
 	}
 	wl_list_remove(&server->output_manager_apply.link);
 	wl_list_remove(&server->output_manager_test.link);
+	/* The display owns the manager. Late output callbacks must not reuse it. */
+	server->output_manager = NULL;
 }

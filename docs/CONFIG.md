@@ -62,11 +62,28 @@ by dropping a requested layout. Invalid hotplug installation leaves the session
 and existing keyboards intact. Rules determine supported model and option names;
 Morph does not maintain a separate XKB registry.
 
-During phase 2, changed keyboard settings require restarting Morph. A reload that
-changes them is rejected in full; other config reloads continue to work. Applying
-new keymaps to existing devices is planned for phase 3. Reload does not re-source
-launcher environment files. The shipped environment still selects `de,us` unless
-overridden; `us` is the fallback when no layout is supplied.
+The first part of phase 3 supports live keymap replacement under these conditions
+on every attached keyboard:
+
+- No keys are held down, including modifier keys such as Shift, Ctrl, Alt, and Super.
+- No sticky modifiers remain active, and keyboard locks such as CapsLock and NumLock are off.
+- The first currently configured layout (group 0) is selected: `de` for `de,us`, or `us` for `us,de`.
+
+If any keyboard does not meet these conditions, Morph rejects the change before
+installing a keymap. Preserving held keys, modifiers, locks, and the selected group
+during replacement is not implemented yet. Reloads with unchanged RMLVO settings
+continue to work while keys are held.
+
+Morph compiles the candidate before changing any device and retains each device's
+previous keymap until every installation succeeds. On failure, it restores maps
+already changed and retains the old configuration. A failed rollback is logged
+explicitly and detaches only the affected keyboard; reconnect that device to recover.
+Clients receive the final selected keymap through wlroots after installation or
+rollback, without seeing intermediate keymaps from the transaction.
+
+Reload re-sources system and user environment files before resolving the new
+configuration; explicit `[keyboard]` entries still win. The shipped environment
+selects `de,us` unless overridden; `us` is the fallback when no layout is supplied.
 
 Physical configuration lines may contain at most 4094 bytes before the newline.
 Oversized lines and read failures reject the file rather than partially applying it.
@@ -256,6 +273,20 @@ Candidates are **mapped**, **initialized**, **non-minimized** XDG toplevels on t
 If the bind has a modifier (the **`Alt`** in `Alt+Tab`), **keeping it held** starts a cycling **session**: the candidate list is captured once and **frozen**, so each further press walks one step further down focus history instead of bouncing between the two most recent windows. Each step **previews** focus on the highlighted window; focus history is only reordered when the session ends. Releasing the modifier **commits** the selection and promotes it to the front of focus history. Pressing **`Esc`** during a session **cancels** it and returns to the window you started from; that `Esc` is consumed and not delivered to the window.
 
 The held modifier set is derived from the **common modifiers** of matching `nextWindow` and `prevWindow` bindings on the same key. Any additional modifier selects the direction rather than restarting the session. Thus `Alt+Tab` / `Alt+Shift+Tab` and `Super+Tab` / `Super+Alt+Tab` both share a single session. You can hold the common modifier, change the direction modifier, and continue stepping through the same frozen list.
+
+XKB layout switching remains active while the switcher is open. Choose bindings
+that do not overlap: `grp:alt_shift_toggle` conflicts with `Alt+Shift+Tab`, because
+Alt+Shift can switch layouts before Tab is pressed. For example, use
+`Ctrl+Super+Tab` / `Ctrl+Super+Shift+Tab` with that XKB option.
+
+At startup and config reload, Morph checks the compiled keymap for overlapping
+group actions on the binding key or its modifier prefixes. It logs
+`keyboard: binding #... '...' conflicts with XKB layout switching`, including the
+physical XKB key name and layout. This diagnostic leaves the config loaded and
+the bindings unchanged; select another Morph binding or XKB option to resolve it.
+The check uses compiled actions, not assumptions about `grp:` option names.
+Only options supported by the installed XKB rules can be used; arbitrary key names
+cannot be combined into a new option.
 
 A bind with **no shared modifier** has nothing to hold, so it commits immediately on every press and therefore alternates between the two most recently used windows. The same applies to the IPC and CLI entry points, which are single-shot by nature.
 

@@ -35,7 +35,15 @@ Only assignments that differ from the current process environment are applied, a
 caller layer keeps priority: values passed on the launcher command line are listed in
 [`MORPH_CALLER_OVERRIDES`](#morph-caller-overrides) and are never replaced by a file.
 Session state such as `WAYLAND_DISPLAY` or `XDG_RUNTIME_DIR` is left untouched. Each
-applied variable is written to the Morph log.
+applied variable is written to the Morph log with its old and new values, for example
+`reload: environment: XKB_DEFAULT_LAYOUT=de => XKB_DEFAULT_LAYOUT=us`.
+`<unset>` marks a previously missing variable; an empty value remains empty.
+
+These lines describe environment assignments, even if the subsequent config reload
+fails. Explicit `[keyboard]` entries can override XKB environment defaults. After a
+successful keymap reload, changed resolved keyboard settings are logged separately,
+for example `reload: keyboard: layout=de,us => layout=us,de`. Rejected or unchanged keymaps
+do not produce these change messages.
 
 Re-sourcing updates the process environment, which is not the same as re-applying every
 setting. What a reload actually changes:
@@ -45,7 +53,7 @@ setting. What a reload actually changes:
 | [`MORPH_DEBUG_XDG`](#morph-debug-xdg), [`MORPH_DEBUG_XDG_COMMITS`](#morph-debug-xdg-commits), [`MORPH_DEBUG_POINTER_FOCUS`](#morph-debug-pointer-focus), [`MORPH_DEBUG_LAYER_HIT`](#morph-debug-layer-hit), [`MORPH_LOG_KEYS`](#morph-log-keys) | Applied immediately |
 | [`MORPH_BRIDGE_RESIZE_HZ`](#morph-bridge-resize-hz) | Applied immediately; clearing the value restores the 17 Hz default |
 | [`MORPH_USER_CONFIG_DIR`](#morph-user-config-dir), [`MORPH_SYSTEM_HOOK_DIR`](LAUNCHER.md), `TERMINAL`, and anything else read by hooks or `exec` keybinds | Applied to processes spawned after the reload; already running clients keep the old environment |
-| [`XKB_DEFAULT_LAYOUT`](#xkb-variables) and the other XKB variables | Applied to keyboards connected after the reload; existing keyboards keep their compiled keymap |
+| [`XKB_DEFAULT_LAYOUT`](#xkb-variables) and the other XKB variables | Explicit `[keyboard]` entries take priority. Changed settings apply to existing and future keyboards only after a successful keymap reload. For now, every attached keyboard must have no keys held down, no active sticky modifiers or keyboard locks (such as CapsLock/NumLock), and the first currently configured layout (group 0) selected. See [CONFIG.md](CONFIG.md#section-keyboard). |
 | [`MORPH_DBG`](#morph-dbg), [`MORPH_LOG_DIR`](#morph-log-dir), [`MORPH_X11`](#morph-x11), [`MORPH_X11_DISPLAY`](#morph-x11-display), [`LD_LIBRARY_PATH`](#ld-library-path) | Needs a session restart: the launcher consumes these before it starts the compositor |
 | [`MORPH_CONFIG`](#morph-config) | Needs a session restart; a reload re-reads the config path resolved at startup |
 
@@ -267,6 +275,13 @@ Optional key-event trace for diagnosing compositor keybind handling.
 - unset or `0`: disabled
 - non-empty and not `0`: enabled
 
+Key and modifier traces include `device_id` and `device` (the device name), so
+events and layout groups can be matched to a specific logical keyboard. Added
+and removed keyboards are logged at info level even when tracing is disabled;
+device-specific reload errors also include the ID and name. IDs are unique within
+the running Morph session; reconnecting a keyboard assigns a new ID. One physical
+keyboard can expose several logical devices, such as separate hotkey devices.
+
 Use this only while debugging keyboard grabs or keybind matching. It is not
 needed for normal runtime logging.
 
@@ -358,7 +373,9 @@ Behavior:
   values also clear these settings. The launchers preserve caller empty values.
 - The shipped environment selects `de,us`, `pc105`, and `grp:alt_shift_toggle`.
 - Explicit `[keyboard]` settings take priority. See [CONFIG.md](CONFIG.md#section-keyboard)
-  for validation and the current restart requirement for changed keyboard settings.
+  for validation and the current requirements for live keymap changes: no keys held down,
+  no active sticky modifiers or keyboard locks, and the first currently configured
+  layout (group 0) selected on every attached keyboard.
 
 Example:
 

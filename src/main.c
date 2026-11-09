@@ -1772,28 +1772,28 @@ static void output_commit(struct wl_listener *listener, void *data)
 }
 
 /** Output destroy callback: leave foreign outputs, detach scene/output layout, and free state. */
-static void output_destroy(struct wl_listener *listener, void *data)
-{
+static void output_destroy(struct wl_listener *listener, void *data) {
 	(void)data;
 	struct comp_output *output = wl_container_of(listener, output, destroy);
 	struct comp_server *server = output->server;
-	struct comp_toplevel *t;
-	wl_list_for_each(t, &output->server->toplevels, link)
-	{
-		if (t->foreign_toplevel)
-		{
-			wlr_foreign_toplevel_handle_v1_output_leave(t->foreign_toplevel, output->wlr_output);
-		}
-	}
-	server_apply_input_device_maps(output->server);
-	ext_workspace_on_output_remove(output->server, output->wlr_output);
-	output_mgmt_update_config(output->server);
+	/* Remapping and configuration updates must only see surviving outputs.
+	 * Publishing this output again during its destroy signal can add listeners
+	 * that will never receive that signal and trip wlroots' teardown assertions. */
 	wl_list_remove(&output->frame.link);
 	wl_list_remove(&output->commit.link);
 	wl_list_remove(&output->destroy.link);
 	wl_list_remove(&output->link);
+	struct comp_toplevel *t;
+	wl_list_for_each(t, &server->toplevels, link) {
+		if (t->foreign_toplevel) {
+			wlr_foreign_toplevel_handle_v1_output_leave(t->foreign_toplevel, output->wlr_output);
+		}
+	}
+	ext_workspace_on_output_remove(server, output->wlr_output);
 	wlr_scene_output_destroy(output->scene_output);
-	wlr_output_layout_remove(output->server->output_layout, output->wlr_output);
+	wlr_output_layout_remove(server->output_layout, output->wlr_output);
+	server_apply_input_device_maps(server);
+	output_mgmt_update_config(server);
 	/*
 	 * Some nested backends can drop the last output without emitting backend
 	 * destroy immediately (for example closing the host X11 window). In nested
@@ -1801,8 +1801,7 @@ static void output_destroy(struct wl_listener *listener, void *data)
 	 * exits instead of lingering and keeping WAYLAND_DISPLAY active.
 	 */
 	/* Nested fallback: no outputs left means host window is gone -> exit main loop. */
-	if (wl_list_empty(&server->outputs) && server->session == NULL && server->wl_display)
-	{
+	if (wl_list_empty(&server->outputs) && server->session == NULL && server->wl_display) {
 		/*
 		 * Shut down Xwayland first so it does not keep writing to a closing
 		 * Wayland connection during the subsequent display-loop termination.
@@ -5464,8 +5463,7 @@ static void ipc_process_line(struct comp_server *server, char *line)
 }
 
 /** Reload config from remembered/default path and apply runtime updates atomically. */
-static bool server_reload_config(struct comp_server *server)
-{
+static bool server_reload_config(struct comp_server *server) {
 	/* Environment first: config resolution and hook spawns below read getenv(). */
 	comp_config_reload_environment();
 	apply_env_runtime_flags();
@@ -5485,10 +5483,9 @@ static bool server_reload_config(struct comp_server *server)
 	if (!comp_config_load(path, &new_cfg)) {
 		return false;
 	}
-	/* Reject RMLVO changes until live keymap replacement is supported. Otherwise
-	 * hotplug would use the new settings while attached devices kept the old map. */
-	if (!comp_keyboard_config_equal(&server->config->keyboard, &new_cfg->keyboard)) {
-		wlr_log(WLR_ERROR, "reload: keyboard settings changed; restart Morph to apply them");
+	/* Keep the old config alive until all keyboards accept the compiled candidate.
+	 * On failure, the keyboard transaction restores their individual keymaps. */
+	if (!comp_keyboard_reload(server, &new_cfg->keyboard)) {
 		comp_config_free(new_cfg);
 		return false;
 	}
@@ -7358,10 +7355,8 @@ bool server_init(struct comp_server *server)
 }
 
 /** Shutdown helper: run hooks and release high-level runtime state. */
-static void server_finish(struct comp_server *server)
-{
-	if (compositor_session_active && server->config)
-	{
+static void server_finish(struct comp_server *server) {
+	if (compositor_session_active && server->config) {
 		comp_config_run_shutdown(server->config);
 	}
 	/*
@@ -7380,6 +7375,12 @@ static void server_finish(struct comp_server *server)
 	server_detach_global_listeners(server);
 	motion_focus_idle_cancel(server);
 	compositor_session_active = false;
+	/* Backend-owned outputs must go away while their layout, protocol globals,
+	 * scene, and compositor config are still alive. Event-loop destruction runs
+	 * after display-global destruction and is too late for our output callbacks. */
+	wlr_backend_destroy(server->backend);
+	server->backend = NULL;
+	server->session = NULL;
 	gamma_control_fini(server);
 	ext_workspace_fini(server);
 	ipc_fini(server);

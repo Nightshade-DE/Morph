@@ -101,7 +101,7 @@ pointer_constraints_server_h = custom_target(
   command: [wayland_scanner, 'server-header', '@INPUT@', '@OUTPUT@'],
 )
 
-executable(
+morph = executable(
   'morph',
   'src/crash_handler.c',
   'src/main.c',
@@ -135,6 +135,7 @@ config_test = executable(
   'src/keyboard_config.c',
   xdg_shell_server_h,
   dependencies: [wlroots, pixman, wayland_server, xkbcommon, m_dep],
+  link_args: ['-Wl,--wrap=xkb_keymap_new_from_names'],
   include_directories: include_directories('src'),
 )
 
@@ -149,6 +150,35 @@ keyboard_test = executable(
   include_directories: include_directories('src'),
 )
 test('keyboard', keyboard_test)
+
+# Reuse the compositor objects so this regression exercises the real shutdown path.
+output_shutdown_test = executable(
+  'morph-test-output-shutdown',
+  'tests/test_output_shutdown.c',
+  objects: morph.extract_all_objects(recursive: true),
+  dependencies: [wlroots, libinput, pixman, cairo, pangocairo, libdrm, wayland_server, xkbcommon, m_dep],
+  link_args: ['-Wl,--wrap=wl_display_add_socket_auto', '-Wl,--wrap=wl_display_run', '-Wl,--wrap=wlr_backend_autocreate'],
+)
+output_test_args = ['--config', files('tests/output-shutdown.conf'), '--no-ipc', '--no-crash-handler', '--log-level', 'error']
+output_test_env = [
+  'WLR_BACKENDS=headless',
+  'WLR_HEADLESS_OUTPUTS=2',
+  'WLR_RENDERER=pixman',
+  'MORPH_X11=0',
+  'MORPH_MANAGED_HOOKS=0',
+]
+test(
+  'output-shutdown',
+  output_shutdown_test,
+  args: output_test_args,
+  env: output_test_env,
+)
+test(
+  'output-hotplug',
+  output_shutdown_test,
+  args: output_test_args,
+  env: output_test_env + ['MORPH_TEST_OUTPUT_HOTPLUG=1'],
+)
 test(
   'shell-runtime',
   sh_prog,

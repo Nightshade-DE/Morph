@@ -200,3 +200,28 @@ In short:
 - close works because it is supported by xdg-shell v3
 - minimize/maximize are unavailable because the protocol version is too old
 - the proper long-term solution is SSD, not another xdg-shell workaround
+
+## 13) Morph exits with code 134 when the session closes
+
+A launcher message reporting compositor exit code 134, together with `SIGABRT`
+or `Aborted (core dumped)`, means Morph failed during shutdown. A usable session
+before logout does not make this a clean exit.
+
+The reproduced failure was:
+
+```text
+wlr_output_finish: Assertion `wl_list_empty(&output->events.destroy.listener_list)' failed.
+```
+
+The output manager still had a destroy listener after output teardown. The fix
+destroys backend-owned outputs while their dependencies are still alive, disables
+configuration publication during shutdown, and removes a dying output from the
+compositor list before publishing updates or remapping devices.
+
+The automated `output-shutdown` and `output-hotplug` tests cover the headless path.
+After rebuilding, repeat the debug and runtime launcher checks on the affected
+machine. Require compositor exit code 0 and no new core dump or fatal marker.
+Keep existing dumps with their matching binaries for diagnosis. See
+[Output Shutdown Regression](TESTS.md#output-shutdown-regression) for commands and
+the separate outstanding LeakSanitizer findings. The detailed investigation is in
+[shutdown_issue_134.md](../shutdown_issue_134.md).

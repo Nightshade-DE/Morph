@@ -152,7 +152,7 @@ bool comp_keyboard_config_compile(struct comp_keyboard_config *config) {
 /**
  * Compare resolved settings rather than independently compiled keymap pointers.
  *
- * The reload guard uses exact field equality. NULL (system rules) and an
+ * The reload path uses exact field equality. NULL (system rules) and an
  * explicit rules name stay distinct even if they currently produce the same map.
  */
 bool comp_keyboard_config_equal(const struct comp_keyboard_config *a, const struct comp_keyboard_config *b) {
@@ -166,4 +166,19 @@ bool comp_keyboard_config_equal(const struct comp_keyboard_config *a, const stru
 		}
 	}
 	return true;
+}
+
+/** Called only after keymap reload succeeds; keep its settings distinct from environment defaults. */
+void comp_keyboard_config_log_changes(const struct comp_keyboard_config *before,
+		const struct comp_keyboard_config *after) {
+	for (size_t i = 0; i < COMP_XKB_FIELD_COUNT; i++) {
+		const char *old_value = before->values[i];
+		const char *new_value = after->values[i];
+		if (old_value == new_value || (old_value && new_value && strcmp(old_value, new_value) == 0)) {
+			continue;
+		}
+		wlr_log(WLR_INFO, "reload: keyboard: %s=%s => %s=%s", field_names[i],
+			old_value ? old_value : "<system default>", field_names[i],
+			new_value ? new_value : "<system default>");
+	}
 }

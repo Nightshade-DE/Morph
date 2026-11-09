@@ -781,11 +781,21 @@ void comp_config_reload_environment(void) {
 			wlr_log(WLR_INFO, "reload: keeping caller-provided %s", name);
 			continue;
 		}
-		if (setenv(name, value, 1) != 0) {
-			wlr_log_errno(WLR_ERROR, "setenv during environment reload");
+		/* setenv may invalidate getenv's pointer. Retain the old value so the
+		 * change is logged only after the assignment has actually succeeded. */
+		char *previous = xstrdup(current);
+		if (current && !previous) {
+			wlr_log(WLR_ERROR, "reload: cannot retain previous environment value for %s", name);
 			continue;
 		}
-		wlr_log(WLR_INFO, "reload: environment %s=%s", name, value);
+		if (setenv(name, value, 1) != 0) {
+			wlr_log_errno(WLR_ERROR, "setenv during environment reload");
+			free(previous);
+			continue;
+		}
+		wlr_log(WLR_INFO, "reload: environment: %s=%s => %s=%s",
+			name, previous ? previous : "<unset>", name, value);
+		free(previous);
 		applied++;
 	}
 	free(dump);
@@ -911,6 +921,140 @@ static bool keysym_matches_bind(xkb_keysym_t want, xkb_keysym_t got) {
 	}
 	/* CapsLock / layout quirks can differ in letter case between config and XKB. */
 	return xkb_keysym_to_lower(want) == xkb_keysym_to_lower(got);
+}
+
+/** Binding labels and their keymap modifier names; XKB mask positions are resolved at load time. */
+static const struct {
+	uint32_t bit;
+	const char *name;
+	const char *label;
+} keyboard_binding_modifiers[] = {
+	{WLR_MODIFIER_SHIFT, XKB_MOD_NAME_SHIFT, "Shift"},
+	{WLR_MODIFIER_CTRL, XKB_MOD_NAME_CTRL, "Ctrl"},
+	{WLR_MODIFIER_ALT, XKB_MOD_NAME_ALT, "Alt"},
+	{WLR_MODIFIER_LOGO, XKB_MOD_NAME_LOGO, "Super"},
+};
+
+/** Resolve binding modifiers through the keymap rather than assuming XKB bit positions. */
+static xkb_mod_mask_t keyboard_binding_mask(struct xkb_keymap *keymap, uint32_t mods) {
+	xkb_mod_mask_t mask = 0;
+	for (size_t i = 0; i < sizeof(keyboard_binding_modifiers) / sizeof(keyboard_binding_modifiers[0]); i++) {
+		xkb_mod_index_t index = xkb_keymap_mod_get_index(keymap, keyboard_binding_modifiers[i].name);
+		if ((mods & keyboard_binding_modifiers[i].bit) && index != XKB_MOD_INVALID) {
+			mask |= (xkb_mod_mask_t)1 << index;
+		}
+	}
+	return mask;
+}
+
+/** Find the binding's key even if a group action replaces its modified keysym. */
+static bool keyboard_binding_key(struct xkb_state *state, xkb_keycode_t code, xkb_keysym_t sym) {
+	struct xkb_keymap *keymap = xkb_state_get_keymap(state);
+	xkb_layout_index_t layout = xkb_state_key_get_layout(state, code);
+	for (xkb_level_index_t level = 0; level < xkb_keymap_num_levels_for_key(keymap, code, layout); level++) {
+		const xkb_keysym_t *syms;
+		int count = xkb_keymap_key_get_syms_by_level(keymap, code, layout, level, &syms);
+		for (int i = 0; i < count; i++) {
+			if (keysym_matches_bind(sym, syms[i])) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+/** Recognize group actions even when a single-layout keymap cannot change groups. */
+static bool keyboard_group_keysym(xkb_keysym_t sym) {
+	switch (sym) {
+	case XKB_KEY_Mode_switch:
+	case XKB_KEY_ISO_Group_Latch:
+	case XKB_KEY_ISO_Group_Lock:
+	case XKB_KEY_ISO_Next_Group:
+	case XKB_KEY_ISO_Next_Group_Lock:
+	case XKB_KEY_ISO_Prev_Group:
+	case XKB_KEY_ISO_Prev_Group_Lock:
+	case XKB_KEY_ISO_First_Group:
+	case XKB_KEY_ISO_First_Group_Lock:
+	case XKB_KEY_ISO_Last_Group:
+	case XKB_KEY_ISO_Last_Group_Lock:
+		return true;
+	default:
+		return false;
+	}
+}
+
+/**
+ * Check the final chord and modifier prefixes against actual compiled actions.
+ *
+ * A prefix matters: Alt+Shift may already change groups before Tab is pressed.
+ * Test subsets of the configured modifiers, including left/right and remapped
+ * modifier keys. The private state is used only at config load, never for input.
+ */
+static bool keyboard_binding_conflict(struct xkb_state *state, const struct comp_keybind *bind,
+		xkb_keycode_t *conflict_key, xkb_layout_index_t *conflict_group) {
+	struct xkb_keymap *keymap = xkb_state_get_keymap(state);
+	xkb_mod_mask_t required = keyboard_binding_mask(keymap, bind->mods);
+	xkb_mod_mask_t supported = keyboard_binding_mask(keymap, COMP_BIND_MOD_FILTER);
+	for (xkb_layout_index_t group = 0; group < xkb_keymap_num_layouts(keymap); group++) {
+		for (xkb_keycode_t code = xkb_keymap_min_keycode(keymap); code <= xkb_keymap_max_keycode(keymap); code++) {
+			xkb_state_update_mask(state, 0, 0, 0, 0, 0, group);
+			bool key_matches = keyboard_binding_key(state, code, bind->keysym);
+			xkb_state_update_key(state, code, XKB_KEY_DOWN);
+			xkb_mod_mask_t key_mods = xkb_state_serialize_mods(state, XKB_STATE_MODS_DEPRESSED) & supported;
+			xkb_state_update_key(state, code, XKB_KEY_UP);
+			bool modifier_matches = (key_mods & required) && !(key_mods & ~required);
+			for (xkb_mod_mask_t subset = required;; subset = (subset - 1) & required) {
+				if ((key_matches && subset == required) || (modifier_matches && !(key_mods & subset))) {
+					xkb_state_update_mask(state, subset, 0, 0, 0, 0, group);
+					xkb_keysym_t sym = xkb_state_key_get_one_sym(state, code);
+					enum xkb_state_component changed = xkb_state_update_key(state, code, XKB_KEY_DOWN);
+					changed |= xkb_state_update_key(state, code, XKB_KEY_UP);
+					if (keyboard_group_keysym(sym) || (changed & (XKB_STATE_LAYOUT_DEPRESSED |
+						XKB_STATE_LAYOUT_LATCHED | XKB_STATE_LAYOUT_LOCKED | XKB_STATE_LAYOUT_EFFECTIVE))) {
+						*conflict_key = code;
+						*conflict_group = group;
+						return true;
+					}
+				}
+				if (subset == 0) {
+					break;
+				}
+			}
+		}
+	}
+	return false;
+}
+
+/** Report overlapping bindings without rewriting user choices or blocking recovery. */
+static bool config_check_keyboard_bindings(const struct comp_config *cfg) {
+	struct xkb_state *state = xkb_state_new(cfg->keyboard.keymap);
+	if (!state) {
+		wlr_log(WLR_ERROR, "keyboard: cannot check binding conflicts");
+		return false;
+	}
+	for (size_t i = 0; i < cfg->n_binds; i++) {
+		xkb_keycode_t code;
+		xkb_layout_index_t group;
+		if (!keyboard_binding_conflict(state, &cfg->binds[i], &code, &group)) {
+			continue;
+		}
+		char key[128] = "unknown";
+		xkb_keysym_get_name(cfg->binds[i].keysym, key, sizeof(key));
+		char modifiers[32] = {0};
+		size_t used = 0;
+		for (size_t j = 0; j < sizeof(keyboard_binding_modifiers) / sizeof(keyboard_binding_modifiers[0]); j++) {
+			if (cfg->binds[i].mods & keyboard_binding_modifiers[j].bit) {
+				used += snprintf(modifiers + used, sizeof(modifiers) - used, "%s+", keyboard_binding_modifiers[j].label);
+			}
+		}
+		const char *physical_key = xkb_keymap_key_get_name(cfg->keyboard.keymap, code);
+		wlr_log(WLR_ERROR, "keyboard: binding #%zu '%s%s' conflicts with XKB layout switching "
+			"at key <%s> in layout '%s'; choose a different binding or XKB option",
+			i + 1, modifiers, key, physical_key ? physical_key : "unknown",
+			xkb_keymap_layout_get_name(cfg->keyboard.keymap, group));
+	}
+	xkb_state_unref(state);
+	return true;
 }
 
 /** Count the modifier bits set in a wlroots modifier mask. */
@@ -1548,7 +1692,7 @@ bool comp_config_load(const char *path, struct comp_config **cfg_out) {
 			 * session should still come up even though no config file resolved. */
 			wlr_log(WLR_INFO, "Builtin config fallback enabled; using synthesized defaults");
 			load_defaults(cfg);
-			if (!comp_keyboard_config_compile(&cfg->keyboard)) {
+			if (!comp_keyboard_config_compile(&cfg->keyboard) || !config_check_keyboard_bindings(cfg)) {
 				comp_config_free(cfg);
 				return false;
 			}
@@ -1888,7 +2032,7 @@ bool comp_config_load(const char *path, struct comp_config **cfg_out) {
 		load_defaults(cfg);
 	}
 
-	if (!comp_keyboard_config_compile(&cfg->keyboard)) {
+	if (!comp_keyboard_config_compile(&cfg->keyboard) || !config_check_keyboard_bindings(cfg)) {
 		comp_config_free(cfg);
 		return false;
 	}

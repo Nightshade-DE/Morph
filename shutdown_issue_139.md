@@ -1,17 +1,24 @@
-# Shutdown issue: xwayland-satellite causes exit 139
+# Historical shutdown investigation: exit 139 with xwayland-satellite enabled
+
+Status reviewed: 2026-10-24. The original cause remains unconfirmed. The observations
+and proposed satellite lifecycle improvements below are retained as investigation
+history; they do not establish that the satellite caused Morph's segmentation fault.
+The currently reproduced output teardown assertion with exit 134 is documented
+separately in [shutdown_issue_134.md](shutdown_issue_134.md).
 
 ## Summary
 
-When Morph is run in nested X11 mode with `xwayland-satellite` enabled, a clean
-`quit` request does not currently result in a clean process exit. The issue is
-reproducible on the T580 test system and occurs after Morph begins normal
-shutdown.
+In the recorded T580 tests, Morph running in nested X11 mode with
+`xwayland-satellite` enabled failed to exit cleanly after a normal `quit` request.
+The failure occurred after Morph began shutdown.
 
-With `MORPH_X11=0`, Morph exits cleanly. This isolates the failure to the
-X11/satellite shutdown path rather than the general Morph shutdown path or the
-focus-cycling implementation.
+The recorded control run with `MORPH_X11=0` exited cleanly. This suggests a
+dependency on that run's X11/satellite configuration, but does not establish the
+failing Morph code path or rule out a general lifecycle error exposed by the
+configuration. A matching Morph core dump and backtrace are needed to identify
+the original cause. A satellite panic alone does not explain Morph's exit 139.
 
-## Reproduction
+## Recorded reproduction procedure
 
 Run the nested session repeatedly with a separate log directory for each run:
 
@@ -25,7 +32,7 @@ for i in $(seq 1 5); do
 done
 ```
 
-Exit Morph through the normal `quit` keybind. The current test result was
+Exit Morph through the normal `quit` keybind. The recorded test result was
 five failures out of five runs.
 
 Control run without the satellite bridge:
@@ -37,7 +44,8 @@ MORPH_LOG_DIR=/tmp/morph-no-x11 \
 ./testing/morph-session_dbg
 ```
 
-The control run exits cleanly.
+The recorded control run exited cleanly. These observations have not been
+revalidated against the current output-shutdown fix.
 
 ## Observed log sequence
 
@@ -63,10 +71,16 @@ with the satellite losing its compositor connection while it is still running.
 
 The wrapper's `[error-scan]` output also reports long EGL/GLES2 extension lists
 as errors. Those are `INFO` messages and should not be treated as failures.
-The actual failure indicators are the `Broken pipe`, the satellite panic, and
-exit code `139`.
+Morph's reported exit code `139` and the segmentation-fault/core-dump message
+indicate the compositor failure. The satellite panic is a separate process failure.
+`Broken pipe` establishes connection loss and can also occur during clean Morph
+shutdown; by itself it does not identify the cause of a Morph crash.
 
-## Current shutdown flow
+## Shutdown flow examined in the original investigation
+
+This section records the code examined at the time. The output teardown ordering
+inside `server_finish()` has since been corrected for the separate exit-134 bug.
+That correction does not prove that the historical exit-139 failure is resolved.
 
 Morph starts the satellite as a child process from
 [`src/main.c`](src/main.c) in `spawn_xwayland_satellite()`:
@@ -80,7 +94,7 @@ execlp("xwayland-satellite", "xwayland-satellite", disp, NULL);
 The PID is only logged. It is not stored in `struct comp_server`, and Morph
 does not retain a shutdown handle for the child.
 
-The corresponding teardown helper is currently a no-op:
+The corresponding teardown helper was a no-op in the examined code:
 
 ```c
 static void server_destroy_xwayland(struct comp_server *server)
@@ -98,13 +112,16 @@ wl_display_destroy_clients(server.wl_display);
 wl_display_destroy(server.wl_display);
 ```
 
-There is no explicit satellite shutdown request, bounded wait, forced cleanup,
+The examined code had no explicit satellite shutdown request, bounded wait, forced cleanup,
 or `waitpid()` for the satellite child. Destroying the Wayland display closes
 the satellite's connection while the satellite is still processing protocol
 events. The satellite then panics on the disconnect instead of treating it as a
 normal shutdown condition.
 
-## Desired shutdown flow
+## Proposed satellite lifecycle improvement
+
+The following proposal addresses child-process ownership. It is not a confirmed
+fix for the historical Morph exit-139 failure.
 
 Morph should own the complete lifecycle of the child it starts:
 
@@ -123,7 +140,7 @@ should poll with `WNOHANG` rather than block the event loop in one uninterruptib
 `waitpid()` call. A shorter normal grace period followed by a final timeout may
 also be appropriate once the runtime policy is defined.
 
-## Morph-side improvements
+## Proposed Morph-side improvements
 
 - Add a `pid_t xwayland_satellite_pid` field to `struct comp_server`.
 - Store the PID returned by `fork()` and reset it if `exec()` fails.
@@ -153,9 +170,9 @@ disconnect is still an expected lifecycle event from the client's perspective.
 calling `unwrap()` on missing protocol state. The upstream panic at
 `src/server/mod.rs:799` should be reported or checked against a newer revision.
 
-The two fixes are complementary: Morph must avoid tearing down a live child
-without coordination, and the satellite must not crash if the connection is
-closed unexpectedly.
+The two improvements are complementary: explicit child ownership on the Morph
+side and graceful disconnect handling on the satellite side. Neither replaces
+analysis of the original Morph core dump.
 
 ## Verification matrix
 
@@ -179,6 +196,11 @@ rg -n "Broken pipe|panicked|fatal signal|rc=139|exited cleanly" \
 
 ## Classification
 
-This is a shutdown/lifecycle integration issue. It is independent of the
-focus-cycling feature, but it currently prevents the nested X11 runtime test
-from being considered clean when `xwayland-satellite` is enabled.
+This is a historical shutdown/lifecycle investigation with an unresolved root
+cause. The recorded runs did not pass clean-shutdown acceptance. Whether the
+original failure still occurs, and how it relates to other lifecycle defects,
+must be checked against matching logs and a Morph backtrace.
+
+The exit-134 output teardown assertion was independently reproduced without
+satellite or clients and has its own fix and regression tests. See
+[shutdown_issue_134.md](shutdown_issue_134.md) for its evidence and validation status.

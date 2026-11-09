@@ -3,12 +3,14 @@
 #include <limits.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
 #include <wlr/util/box.h>
+#include <wlr/util/log.h>
 
 #include "config.h"
 #include "server.h"
@@ -17,6 +19,53 @@
 static int cycle_step_calls;
 static int cycle_step_delta;
 static uint32_t cycle_step_hold_mods;
+
+static bool use_alt_tab_keymap;
+static unsigned binding_conflicts;
+static char last_binding_conflict[512];
+static char environment_reload_log[8192];
+
+/** Record reload diagnostics so tests can distinguish changes from unchanged or protected values. */
+static void record_environment_reload(enum wlr_log_importance importance, const char *format, va_list args) {
+	(void)importance;
+	size_t used = strlen(environment_reload_log);
+	int count = vsnprintf(environment_reload_log + used, sizeof(environment_reload_log) - used, format, args);
+	assert(count >= 0 && (size_t)count + 1 < sizeof(environment_reload_log) - used);
+	strcat(environment_reload_log, "\n");
+}
+
+struct xkb_keymap *__real_xkb_keymap_new_from_names(struct xkb_context *context,
+	const struct xkb_rule_names *names, enum xkb_keymap_compile_flags flags);
+
+/** Test a real Alt+Tab group action without inventing an unsupported grp option. */
+struct xkb_keymap *__wrap_xkb_keymap_new_from_names(struct xkb_context *context,
+		const struct xkb_rule_names *names, enum xkb_keymap_compile_flags flags) {
+	if (!use_alt_tab_keymap) {
+		return __real_xkb_keymap_new_from_names(context, names, flags);
+	}
+	const char *text =
+		"xkb_keymap {\n"
+		"xkb_keycodes { include \"evdev+aliases(qwerty)\" };\n"
+		"xkb_types { include \"complete\" };\n"
+		"xkb_compatibility { include \"complete\" };\n"
+		"xkb_symbols { include \"pc+us+de:2\"\n"
+		"key <TAB> { type[Group1] = \"PC_ALT_LEVEL2\", symbols[Group1] = [ Tab, ISO_Next_Group ] };\n"
+		"}; };\n";
+	return xkb_keymap_new_from_string(context, text, XKB_KEYMAP_FORMAT_TEXT_V1, flags);
+}
+
+/** Capture only the conflict diagnostic; keep unrelated parser failures visible. */
+static void record_binding_conflict(enum wlr_log_importance importance, const char *format, va_list args) {
+	(void)importance;
+	char message[512];
+	vsnprintf(message, sizeof(message), format, args);
+	if (strstr(message, "conflicts with XKB layout switching")) {
+		binding_conflicts++;
+		snprintf(last_binding_conflict, sizeof(last_binding_conflict), "%s", message);
+	} else {
+		fprintf(stderr, "%s\n", message);
+	}
+}
 
 void server_set_layout(struct comp_server *server, enum comp_layout layout)
 {
@@ -502,6 +551,8 @@ static int test_environment_reload_applies_files(void)
     const char *system_text =
         "MORPH_TEST_SYSTEM_ONLY=from-system\n"
         "MORPH_TEST_SHARED=from-system\n"
+        "MORPH_TEST_EMPTY=''\n"
+        "MORPH_TEST_FROM_EMPTY=filled\n"
         "MORPH_TEST_CALLER=from-file\n";
     const char *user_text =
         "MORPH_TEST_SHARED=from-user\n"
@@ -516,6 +567,8 @@ static int test_environment_reload_applies_files(void)
         {"MORPH_TEST_EXPANDED", "seed-expanded"},
         {"MORPH_TEST_CALLER", "from-caller"},
         {"MORPH_TEST_KEEP", "keep"},
+        {"MORPH_TEST_EMPTY", ""},
+        {"MORPH_TEST_FROM_EMPTY", "filled"},
     };
 
     char system_file[PATH_MAX] = "";
@@ -531,10 +584,34 @@ static int test_environment_reload_applies_files(void)
         setenv("MORPH_TEST_CALLER", "from-caller", 1);
         setenv("MORPH_CALLER_OVERRIDES", "MORPH_TEST_CALLER", 1);
         unsetenv("MORPH_TEST_SYSTEM_ONLY");
-        unsetenv("MORPH_TEST_SHARED");
+        setenv("MORPH_TEST_SHARED", "previous", 1);
+        setenv("MORPH_TEST_EMPTY", "previous", 1);
+        setenv("MORPH_TEST_FROM_EMPTY", "", 1);
         unsetenv("MORPH_TEST_EXPANDED");
 
+        enum wlr_log_importance verbosity = wlr_log_get_verbosity();
+        environment_reload_log[0] = '\0';
+        wlr_log_init(WLR_INFO, record_environment_reload);
         comp_config_reload_environment();
+        wlr_log_init(verbosity, NULL);
+
+        assert(strstr(environment_reload_log,
+            "reload: environment: MORPH_TEST_SHARED=previous => MORPH_TEST_SHARED=from-user"));
+        assert(strstr(environment_reload_log,
+            "MORPH_TEST_SYSTEM_ONLY=<unset> => MORPH_TEST_SYSTEM_ONLY=from-system"));
+        assert(strstr(environment_reload_log,
+            "MORPH_TEST_EMPTY=previous => MORPH_TEST_EMPTY=\n"));
+        assert(strstr(environment_reload_log,
+            "MORPH_TEST_FROM_EMPTY= => MORPH_TEST_FROM_EMPTY=filled"));
+        assert(!strstr(environment_reload_log, "reload: environment: MORPH_TEST_CALLER="));
+        assert(!strstr(environment_reload_log, "reload: environment: MORPH_TEST_KEEP="));
+
+        environment_reload_log[0] = '\0';
+        wlr_log_init(WLR_INFO, record_environment_reload);
+        comp_config_reload_environment();
+        wlr_log_init(verbosity, NULL);
+        assert(!strstr(environment_reload_log, "reload: environment: "));
+        assert(strstr(environment_reload_log, "reload: applied 0 environment change(s)"));
 
         rc = 0;
         for (size_t i = 0; i < sizeof(expected) / sizeof(expected[0]); i++)
@@ -566,6 +643,8 @@ static int test_environment_reload_applies_files(void)
     unsetenv("MORPH_TEST_SYSTEM_ONLY");
     unsetenv("MORPH_TEST_SHARED");
     unsetenv("MORPH_TEST_EXPANDED");
+    unsetenv("MORPH_TEST_EMPTY");
+    unsetenv("MORPH_TEST_FROM_EMPTY");
     return rc;
 }
 
@@ -792,6 +871,53 @@ static struct comp_config *load_fixture(const char *text, bool expected) {
 	return config;
 }
 
+/** Check complete chords, modifier prefixes, and a custom Alt+Tab action on config load. */
+static void test_keyboard_binding_conflicts(void) {
+	const struct {
+		const char *options;
+		const char *mods;
+		const char *key;
+		bool custom;
+		unsigned conflicts;
+	} cases[] = {
+		{"grp:alt_shift_toggle", "Alt+Shift", "Tab", false, 1},
+		{"grp:ctrl_alt_toggle", "Alt+Ctrl", "Tab", false, 1},
+		{"grp:alt_space_toggle", "Alt", "space", false, 1},
+		{"grp:alt_space_toggle", "Alt+Shift", "space", false, 1},
+		{"grp:alt_shift_toggle", "Ctrl+Super+Shift", "Tab", false, 0},
+		{"grp:alt_shift_toggle", "Alt", "Tab", false, 0},
+		{"", "Alt+Shift", "Tab", false, 0},
+		{"", "Alt", "Tab", true, 1},
+		{"", "Alt+Shift", "Tab", true, 1},
+		{"", "Super", "Tab", true, 0},
+	};
+	enum wlr_log_importance verbosity = wlr_log_get_verbosity();
+	wlr_log_init(WLR_ERROR, record_binding_conflict);
+	for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+		char text[512];
+		snprintf(text, sizeof(text),
+			"[keyboard]\nrules = evdev\nmodel = pc105\nlayout = de,us\nvariant =\noptions = %s\n"
+			"[bind]\nmods = %s\nkey = %s\naction = nextWindow\n",
+			cases[i].options, cases[i].mods, cases[i].key);
+		binding_conflicts = 0;
+		last_binding_conflict[0] = '\0';
+		use_alt_tab_keymap = cases[i].custom;
+		struct comp_config *cfg = load_fixture(text, true);
+		if (binding_conflicts != cases[i].conflicts) {
+			fprintf(stderr, "conflict case %zu: got %u, expected %u\n", i, binding_conflicts, cases[i].conflicts);
+		}
+		assert(binding_conflicts == cases[i].conflicts);
+		assert(cfg->n_binds == 1 && cfg->binds[0].action == COMP_KEYBIND_WINDOW_NEXT);
+		if (binding_conflicts) {
+			assert(strstr(last_binding_conflict, "binding #1"));
+			assert(strstr(last_binding_conflict, "choose a different binding or XKB option"));
+		}
+		comp_config_free(cfg);
+	}
+	use_alt_tab_keymap = false;
+	wlr_log_init(verbosity, NULL);
+}
+
 /** Cover RMLVO precedence, explicit empty values, and invalid keymap rejection. */
 static void test_keyboard_config(void) {
 	const char *vars[] = {"XKB_DEFAULT_RULES", "XKB_DEFAULT_MODEL", "XKB_DEFAULT_LAYOUT",
@@ -860,6 +986,7 @@ static void test_line_boundaries(void) {
 
 int main(void) {
 	test_keyboard_config();
+	test_keyboard_binding_conflicts();
 	test_line_boundaries();
     if (test_valid_config_parse() != 0)
     {

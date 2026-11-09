@@ -74,12 +74,12 @@ action = workspace_goto
 command = 2
 
 [bind]
-mods = Alt
+mods = Ctrl+Super
 key = Tab
 action = nextWindow
 
 [bind]
-mods = Alt+Shift
+mods = Ctrl+Super+Shift
 key = Tab
 action = prevWindow
 CONFIG
@@ -181,12 +181,12 @@ action = workspace_goto
 command = 2
 
 [bind]
-mods = Alt
+mods = Ctrl+Super
 key = Tab
 action = nextWindow
 
 [bind]
-mods = Alt+Shift
+mods = Ctrl+Super+Shift
 key = Tab
 action = prevWindow
 CONFIG
@@ -221,7 +221,7 @@ morph_xkb_debug_launcher() {
         "$MORPH_PROJECT_PATH/testing/morph-session_dbg"
     launcher_status=$?
     printf 'Debug launcher exit status: %s\n' "$launcher_status"
-    printf 'Debug startup log: %s\n' "$MORPH_LAUNCHER_LOG_DIR/morph-nested-startup.log"
+    printf 'Debug launcher logs: %s\n' "$MORPH_LAUNCHER_LOG_DIR"
     return "$launcher_status"
 }
 
@@ -238,7 +238,7 @@ morph_xkb_runtime_launcher() {
         "$MORPH_PROJECT_PATH/scripts/morph-session"
     launcher_status=$?
     printf 'Runtime launcher exit status: %s\n' "$launcher_status"
-    printf 'Runtime startup log: %s\n' "$MORPH_LAUNCHER_LOG_DIR/morph-nested-startup.log"
+    printf 'Runtime launcher logs: %s\n' "$MORPH_LAUNCHER_LOG_DIR"
     return "$launcher_status"
 }
 
@@ -301,7 +301,7 @@ morph_xkb_debug_launcher_log() {
         return 1
     fi
 
-    rg -n "Config file path:|Selected session mode:|Compositor binary:|Compositor exited normally|keyboard:|ERROR|CRASH|crash" \
+    rg -n -i "Config file path:|Selected session mode:|Compositor binary:|Compositor exited|keyboard:|ERROR|CRASH|fatal signal|assertion|aborted|core dumped" \
         "$MORPH_TEST_ROOT/dbg-launcher-logs"
 }
 
@@ -311,7 +311,7 @@ morph_xkb_runtime_launcher_log() {
         return 1
     fi
 
-    rg -n "Config file path:|Selected session mode:|Compositor binary:|Compositor exited normally|keyboard:|ERROR|CRASH|crash" \
+    rg -n -i "Config file path:|Selected session mode:|Compositor binary:|Compositor exited|keyboard:|ERROR|CRASH|fatal signal|assertion|aborted|core dumped" \
         "$MORPH_TEST_ROOT/runtime-launcher-logs"
 }
 
@@ -378,6 +378,84 @@ morph_xkb_logs() {
     rg -n "keyboard:|reload:|ipc:|XKB:|Failed|ERROR" "$MORPH_TEST_ROOT"
 }
 
+
+# Phase 3 defaults to native input; nested mode is an optional X11 regression check.
+morph_xkb_phase3_session() {
+    local mode="${1:-native}"
+    case "$mode" in
+        nested|native) ;;
+        *) printf 'Use mxkb-p3-session native or nested.\n' >&2; return 1 ;;
+    esac
+    morph_xkb_prepare || return
+
+    if [ "$mode" = native ]; then
+        export MORPH_TEST_BIN="$MORPH_PROJECT_PATH/build/morph"
+    else
+        export MORPH_TEST_BIN="$MORPH_PROJECT_PATH/build_dbg/morph"
+    fi
+    export MORPH_PHASE3_LOG="$MORPH_TEST_ROOT/phase3-$mode.log"
+    printf 'Phase 3 log: %s\n' "$MORPH_PHASE3_LOG"
+    if [ "$mode" = native ]; then
+        env -u DISPLAY -u WAYLAND_DISPLAY -u WLR_BACKENDS MORPH_LOG_KEYS=1 \
+            "$MORPH_TEST_BIN" --log-level info \
+            --config "$MORPH_TEST_ROOT/morph.conf" 2>&1 | tee "$MORPH_PHASE3_LOG"
+    else
+        env -u WLR_BACKENDS MORPH_LOG_KEYS=1 \
+            "$MORPH_TEST_BIN" --log-level info \
+            --config "$MORPH_TEST_ROOT/morph.conf" 2>&1 | tee "$MORPH_PHASE3_LOG"
+    fi
+    return "${PIPESTATUS[0]}"
+}
+
+morph_xkb_phase3_layout() {
+    if [ -z "${MORPH_TEST_ROOT:-}" ]; then
+        printf 'Start a session with mxkb-p3-session first.\n' >&2
+        return 1
+    fi
+    local layout="${1:-}" variant
+    case "$layout" in
+        de,us) variant='nodeadkeys,' ;;
+        us,de) variant=',nodeadkeys' ;;
+        invalid) layout=invalid_morph_layout; variant='' ;;
+        *) printf 'Use mxkb-p3-layout de,us, us,de, or invalid.\n' >&2; return 1 ;;
+    esac
+    sed -i -e "s/^layout =.*/layout = $layout/" \
+        -e "s/^variant =.*/variant = $variant/" "$MORPH_TEST_ROOT/morph.conf"
+}
+
+morph_xkb_phase3_reload() {
+    printf 'Reload in 3 seconds; do not hold down any keys.\n'
+    sleep 3
+    morph_xkb_reload
+}
+
+morph_xkb_phase3_bindings() {
+    local next prev
+    case "${1:-}" in
+        safe) next=Ctrl+Super; prev=Ctrl+Super+Shift ;;
+        conflict) next=Alt; prev=Alt+Shift ;;
+        *) printf 'Use mxkb-p3-bindings safe or conflict.\n' >&2; return 1 ;;
+    esac
+    if [ ! -f "${MORPH_TEST_ROOT:-}/morph.conf" ]; then
+        printf 'Start a session with mxkb-p3-session first.\n' >&2
+        return 1
+    fi
+    sed -i -e "s/^mods = Alt$/mods = $next/" \
+        -e "s/^mods = Ctrl+Super$/mods = $next/" \
+        -e "s/^mods = Alt+Shift$/mods = $prev/" \
+        -e "s/^mods = Ctrl+Super+Shift$/mods = $prev/" \
+        -e 's/^options =.*/options = grp:alt_shift_toggle/' \
+        "$MORPH_TEST_ROOT/morph.conf"
+}
+
+morph_xkb_phase3_log() {
+    if [ -z "${MORPH_PHASE3_LOG:-}" ]; then
+        printf 'Start a session with mxkb-p3-session first.\n' >&2
+        return 1
+    fi
+    rg -n "keyboard:|reload:|ipc: config reload|XKB:|ERROR|CRASH" "$MORPH_PHASE3_LOG"
+}
+
 alias mxkb-prepare='morph_xkb_prepare'
 alias mxkb-native='morph_xkb_native'
 alias mxkb-dbg-launcher='morph_xkb_debug_launcher'
@@ -395,6 +473,11 @@ alias mxkb-p2-reload-log='morph_xkb_phase2_reload_log'
 alias mxkb-reload='morph_xkb_reload'
 alias mxkb-invalid='morph_xkb_invalid_layout'
 alias mxkb-logs='morph_xkb_logs'
+alias mxkb-p3-session='morph_xkb_phase3_session'
+alias mxkb-p3-layout='morph_xkb_phase3_layout'
+alias mxkb-p3-reload='morph_xkb_phase3_reload'
+alias mxkb-p3-log='morph_xkb_phase3_log'
+alias mxkb-p3-bindings='morph_xkb_phase3_bindings'
 ```
 
 Typical distribution procedure:
@@ -528,8 +611,8 @@ Instructions:
 
 1. Load the functions from the preparation section in the test machine's `.bashrc` and run `source ~/.bashrc`.
 2. Run `mxkb-prepare` in the Morph project directory. Check the printed values for `MORPH_PROJECT_PATH`, `MORPH_TEST_ROOT`, and `MORPH_TEST_BIN`.
-3. Run `mxkb-dbg-launcher`. The command blocks until the nested Morph session exits.
-4. In the nested session, open a terminal with `Super+Enter`, type `y` and `z`, switch groups with `Alt+Shift`, and type `y` and `z` again.
+3. Run `mxkb-dbg-launcher`. The command blocks until the Morph session exits. For the Debian shutdown recheck, start it from a TTY for a native session.
+4. In the Morph session, open a terminal with `Super+Enter`, type `y` and `z`, switch groups with `Alt+Shift`, and type `y` and `z` again.
 5. Exit Morph with `Ctrl+Super+Alt+Escape`.
 6. Run `mxkb-dbg-launcher-log`. The alias checks the launcher log for the configuration, binary, session mode, keyboard messages, and errors.
 
@@ -538,7 +621,7 @@ Expected:
 - [x] The launcher automatically uses `$MORPH_PROJECT_PATH/build_dbg/morph`; `MORPH_BIN` is not set for this test.
 - [x] The temporary configuration and session mode are shown in the startup log.
 - [x] Keyboard input, layout switching, and clean exit work.
-- [x] The launcher exits successfully and the log contains no XKB, error, or crash markers.
+- [x] The launcher reports compositor exit code 0, with no new Morph XKB error, assertion, or fatal-signal marker.
 
 ### Phase 1.9: Runtime launcher
 
@@ -552,8 +635,8 @@ Instructions:
 
 1. If the `.bashrc` helpers are not loaded, run `source ~/.bashrc`.
 2. Run `mxkb-prepare` in the Morph project directory and check the printed paths.
-3. Run `mxkb-runtime-launcher`. The command blocks until the nested Morph session exits.
-4. In the nested session, open a terminal with `Super+Enter`, type `y` and `z`, switch groups with `Alt+Shift`, and type `y` and `z` again.
+3. Run `mxkb-runtime-launcher`. The command blocks until the Morph session exits. For the Debian shutdown recheck, start it from a TTY for a native session.
+4. In the Morph session, open a terminal with `Super+Enter`, type `y` and `z`, switch groups with `Alt+Shift`, and type `y` and `z` again.
 5. Exit Morph with `Ctrl+Super+Alt+Escape`.
 6. Run `mxkb-runtime-launcher-log`. The alias checks the launcher log for the configuration, binary, session mode, keyboard messages, and errors.
 
@@ -562,7 +645,20 @@ Expected:
 - [x] The launcher uses the current runtime build at `$MORPH_PROJECT_PATH/build/morph`.
 - [x] The temporary configuration and session mode are shown in the startup log.
 - [x] Keyboard input, layout switching, and clean exit work.
-- [x] There is no unknown `[keyboard]` section, XKB error, or crash marker.
+- [x] There is no unknown `[keyboard]` section or Morph XKB error, assertion, or fatal-signal marker; the compositor exits with code 0.
+
+Shutdown finding and recheck (2026-10-24): input worked, but the earlier exit code
+134 failed the clean-exit expectations in 1.8 and 1.9. After the output-lifecycle
+fix, the native Debian Sid launcher rechecks report compositor exit code 0:
+debug at 18:34:22 and runtime at 18:38:11. The supplied excerpts show no repeated
+output assertion or Morph fatal-signal marker. The launcher expectations above
+are therefore marked passed again. A separate rerun of 1.7 was not reported.
+
+`Broken pipe` and `Error: ExitFailure(1)` remain in the surrounding process output;
+their exact source is not identified by these excerpts. They do not replace the
+explicit compositor exit status. Preserve old dumps and matching binaries; the
+successful launcher rechecks do not resolve the separate historical exit-139
+investigation or outstanding LeakSanitizer findings.
 
 The procedure must work the same in the runtime and dbg builds. Differences in
 debug log output are expected. If the X11 desktop intercepts `Alt+Shift` or
@@ -726,32 +822,131 @@ Expected:
 The reload restriction applies only to Phase 2. Once Phase 3 implements live
 reload, replace this final check with the new reload procedure.
 
+## Phase 3.0: First validation of items 1 and 2
+
+Validation status: the full native procedure on Debian Sid passed.
+The optional nested check for the current version remains pending.
+
+This first part implements the wlroots modifier path and keymap replacement with
+rollback. State migration is still pending. Changes currently require every
+keyboard to be in group 0 with no keys held down and no active modifiers/locks. The completed
+phase 2 results above remain a record of the earlier implementation; phase 2.7's
+blanket restart restriction is now replaced by this check.
+
+Run the full Phase 3.0 procedure in a native Morph session. This lets Morph process
+physical keyboards individually without input changes from an outer X11 desktop.
+For this phase, native testing takes precedence over the general nested-first order.
+The short optional nested check below covers the existing X11 group correction;
+it does not require repeating the full procedure.
+
+Instructions:
+
+1. Rebuild both variants and run the automated checks from [Preparation](#preparation).
+2. Switch to a TTY and log in. Change to the Morph project directory and load the
+   updated `.bashrc` helpers with `source ~/.bashrc`. Run `mxkb-p3-session native`.
+   The helper starts the runtime build with physical input, creates the initial
+   `de,us` test config, and enables IPC. Calling `mxkb-p3-session` without an argument
+   also starts native mode. The log is saved to `$MORPH_TEST_ROOT/phase3-native.log`.
+3. Open a terminal with `Super+Enter` inside Morph. Run `source ~/.bashrc` there.
+   This terminal inherits the test variables. Open a second client, such as Geany.
+   Type the same physical Y/Z keys in both. Leave all keyboards on their initial `de`
+   group and turn CapsLock and NumLock off.
+4. In the terminal inside Morph, run `mxkb-p3-layout us,de`, then `mxkb-p3-reload`.
+   Do not hold down any keys during the three-second delay. Check Y/Z in both existing clients
+   and in a newly opened terminal. Run `mxkb-p3-log` to print the relevant log lines.
+5. Run `mxkb-p3-layout invalid`, then `mxkb-p3-reload`. Check `mxkb-p3-log` and type
+   Y/Z again. The invalid configuration must not replace the working `us,de` keymap.
+6. Restore the file with `mxkb-p3-layout de,us`. Turn CapsLock on and run
+   `mxkb-p3-reload`. Verify rejection in `mxkb-p3-log`, then turn CapsLock off and
+   repeat `mxkb-p3-reload` without holding down any keys. This reload must succeed.
+7. Test `Alt+Shift` several times after reload, followed by Shift, AltGr, and focus
+   changes.
+8. With at least two windows open, hold Ctrl+Super and press Tab several times.
+   Add Shift for backward selection, then release Shift for forward selection.
+   Release Ctrl and Super: the overlay must disappear and the selected window must
+   stay focused. Open the switcher again and press Escape while holding Ctrl+Super:
+   the overlay must disappear and focus must return to the original window.
+   Release all keys, open another window, and start a new selection: the new window
+   must appear in the list. Check this before and after a valid keymap reload.
+   The test config now uses Ctrl+Super+Tab / Ctrl+Super+Shift+Tab to avoid the
+   Alt+Shift layout chord. For an existing session with older helpers, select group
+   0, clear locks, run `mxkb-p3-bindings safe`, then `mxkb-p3-reload` with no keys held.
+9. Select group 0 and clear locks. Run `mxkb-p3-bindings conflict`, then
+   `mxkb-p3-reload`. Use `mxkb-p3-log` to check for
+   `conflicts with XKB layout switching` on the Alt+Shift+Tab binding.
+   Morph stays running and leaves XKB actions active, including while the overlay
+   is open; do not expect the conflicting backward chord to work reliably.
+   Restore the safe bindings with `mxkb-p3-bindings safe`, then `mxkb-p3-reload`.
+   The new reload must not emit another conflict message; previous messages remain
+   in the log. The same diagnostic is also emitted at startup with a conflicting config.
+10. For two physical keyboards, repeat steps 3 through 6 natively with both
+   connected. On both keyboards, do not hold down any keys, clear sticky modifiers,
+   turn off keyboard locks, and select group 0 before a valid change.
+   Exit with `Ctrl+Super+Alt+Escape`.
+
+Expected:
+
+- [x] A valid reload changes input in existing and new clients without a restart;
+  the log reports `reload: keyboard: keymap reload applied to ... keyboard(s)`.
+  Changed keyboard settings show their old and new values, for example
+  `reload: keyboard: layout=de,us => layout=us,de`. The separate `reload: environment:`
+  lines show environment changes; those defaults may be overridden by `[keyboard]`.
+- [x] An invalid candidate reports an XKB/configuration error and
+  `ipc: config reload failed`; the previous keymap stays usable.
+  No new `reload: keyboard: layout=... => layout=...` message may appear for this rejected reload.
+- [x] CapsLock causes `reload: keyboard: cannot change settings for '...' yet.`; after clearing the
+  lock, the same valid change succeeds. This is a temporary restriction until item 3.
+- [x] Modifier and group switching still work. Record the mode, build, backend,
+  commit, and log path. Automatic tests inject installation and rollback failures;
+  no runtime failure-injection switch is provided.
+- [x] The switcher closes on Ctrl+Super release; Escape cancels and restores the original
+  focus. A new selection includes newly opened windows, before and after reload.
+- [x] The conflicting binding emits a clear diagnostic on config reload. Safe
+  bindings produce no new conflict message; XKB layout switching is not suppressed.
+
+### Short nested check (optional)
+
+After native validation, check the X11 group correction briefly on the development
+system. Nested input may combine physical keyboards, so this check does not validate
+separate devices or replace the native procedure.
+
+1. Exit the native Morph session and return to the X11 desktop. In a terminal, change
+   to the project directory, run `source ~/.bashrc`, then `mxkb-p3-session nested`.
+   This starts the debug build and writes `$MORPH_TEST_ROOT/phase3-nested.log`.
+2. Inside Morph, open a terminal with `Super+Enter` and run `source ~/.bashrc`.
+   Type the physical Y/Z keys, press `Alt+Shift`, and type the same keys again.
+   Repeat six times. Check the output after releasing Alt and Shift.
+3. Select the initial `de` group and turn off keyboard locks. Run `mxkb-p3-layout us,de`
+   and `mxkb-p3-reload`, without holding down any keys during the delay. Repeat the
+   Y/Z and `Alt+Shift` check, then print the log with `mxkb-p3-log`.
+4. Exit with `Ctrl+Super+Alt+Escape`. Note any outer-desktop shortcuts that prevented
+   the check from running.
+
+Expected:
+
+- [ ] After a switch, the selected group and matching Y/Z output remain stable
+  after Alt and Shift are no longer held down, both before and after reload.
+
 ## Later phases - not implemented yet
 
-Prepare each of the following checks on the development system first and run it after the corresponding phase is implemented. Then run the relevant native distribution tests.
+Prepare each of the following checks on the development system first and run it after the corresponding phase is implemented. Then run the relevant native distribution tests. Depending on the restrictions of the test environment, these may also replace the nested tests.
 
-### Phase 3: Keymap reload and clients
+### Phase 3.1: Keymap reload and clients
 
-Phase 3 can only be tested after live reload is implemented. With the current Phase 2 implementation, the following result is expected and is not a test failure:
+The full phase 3 checks below remain pending. Use Phase 3.0 for the first
+validation; do not yet expect reload with held modifiers or group migration to work.
 
-```text
-reload: keyboard settings changed; restart Morph to apply them
-ipc: config reload failed
-```
-
-These messages indicate that the Phase 2 reload restriction is still active. Phase 3.1 is testable only when valid keyboard changes are accepted by reload.
-
-### Phase 3 preparation: start and reload calls
+### Phase 3.1 preparation: start and reload calls
 
 This preparation applies to Phases 3.1 through 3.4.
 
 - In terminals A and B, first change to the repository and set the shared test variables. `MORPH_TEST_ROOT` must be the same path created during preparation:
 
 ```bash
-    cd <path_to_morph_project_folder>
-    export MORPH_PROJECT_PATH="$PWD"
+cd <path_to_morph_project_folder>
+export MORPH_PROJECT_PATH="$PWD"
 export MORPH_TEST_ROOT=/tmp/morph-xkb-report.5vOvpK
-    export MORPH_TEST_BIN="$MORPH_PROJECT_PATH/build_dbg/morph"
+export MORPH_TEST_BIN="$MORPH_PROJECT_PATH/build_dbg/morph"
 export MORPH_PHASE3_LOG="$MORPH_TEST_ROOT/dbg-nested-phase3-reload.log"
 ```
 
@@ -796,11 +991,11 @@ rg -n "reload:|keyboard:|ipc: config reload" "$MORPH_PHASE3_LOG"
 
 Instructions:
 
-- [ ] Start Morph in terminal A with the [Phase 3 start call](#phase-3-preparation-start-and-reload-calls).
+- [ ] Start Morph in terminal A with the [Phase 3 start call](#phase-31-preparation-start-and-reload-calls).
 - [ ] Open two clients, for example Geany and foot.
 - [ ] Type Y/Z in both clients and switch between `de` and `us` with `Alt+Shift`.
-- [ ] Change the active config using the [valid Phase 3 reload change](#phase-3-preparation-start-and-reload-calls).
-- [ ] Trigger the reload in terminal B with the [Phase 3 reload call](#phase-3-preparation-start-and-reload-calls).
+- [ ] Change the active config using the [valid Phase 3 reload change](#phase-31-preparation-start-and-reload-calls).
+- [ ] Trigger the reload in terminal B with the [Phase 3 reload call](#phase-31-preparation-start-and-reload-calls).
 - [ ] Check Y/Z and `Alt+Shift` in both existing clients and a newly started client.
 
 Expected:
@@ -815,8 +1010,8 @@ Expected:
 Instructions:
 
 - [ ] Use a running Phase 3 session with working input.
-- [ ] Change the active config using the [invalid Phase 3 reload change](#phase-3-preparation-start-and-reload-calls).
-- [ ] Trigger the reload in terminal B with the [Phase 3 reload call](#phase-3-preparation-start-and-reload-calls).
+- [ ] Change the active config using the [invalid Phase 3 reload change](#phase-31-preparation-start-and-reload-calls).
+- [ ] Trigger the reload in terminal B with the [Phase 3 reload call](#phase-31-preparation-start-and-reload-calls).
 - [ ] Check the error messages in terminal A, then continue typing in the open clients.
 
 Expected:
@@ -829,7 +1024,7 @@ Expected:
 
 Instructions:
 
-- [ ] Start Morph in terminal A with the [Phase 3 start call](#phase-3-preparation-start-and-reload-calls) and open an editor.
+- [ ] Start Morph in terminal A with the [Phase 3 start call](#phase-31-preparation-start-and-reload-calls) and open an editor.
 - [ ] Start a delayed reload in terminal B: `sleep 5; "$MORPH_TEST_BIN" --reload-config`.
 - [ ] Immediately switch back to the Morph session and focus the editor.
 - [ ] Hold `Shift` in the Morph session until the reload visibly appears in the terminal A log.
@@ -848,11 +1043,11 @@ Expected:
 
 Instructions:
 
-- [ ] Start Morph in terminal A with the [Phase 3 start call](#phase-3-preparation-start-and-reload-calls).
+- [ ] Start Morph in terminal A with the [Phase 3 start call](#phase-31-preparation-start-and-reload-calls).
 - [ ] Connect two keyboards.
 - [ ] Test Y/Z with keyboards A and B.
-- [ ] Change the active config using the [valid Phase 3 reload change](#phase-3-preparation-start-and-reload-calls).
-- [ ] Trigger the reload in terminal B with the [Phase 3 reload call](#phase-3-preparation-start-and-reload-calls).
+- [ ] Change the active config using the [valid Phase 3 reload change](#phase-31-preparation-start-and-reload-calls).
+- [ ] Trigger the reload in terminal B with the [Phase 3 reload call](#phase-31-preparation-start-and-reload-calls).
 - [ ] Test Y/Z and `Alt+Shift` with both keyboards.
 
 Expected:
@@ -869,6 +1064,8 @@ Expected:
 
 ### Phase 5: Runtime control and state
 
+- [ ] After implementation, test `Super+K` as the default binding for the next XKB
+  group. Configure a different shortcut and test the same group change.
 - [ ] Run Next, Previous, and a valid index, then check text input.
 - [ ] Run an invalid index. The state must not change.
 - [ ] Address two keyboards individually, remove one target, and verify that its old ID is rejected.
@@ -911,6 +1108,8 @@ Native distribution tests use the helpers from the `Preparation` section.
 | open | Development system / nested | dbg | [Phase 1.7 Clean exit](#phase-17-clean-exit) | open |
 | open | Development system / nested | dbg | [Phase 1.8 Debug launcher](#phase-18-debug-launcher) | open |
 | open | Development system / nested | runtime | [Phase 1.9 Runtime launcher](#phase-19-runtime-launcher) | open |
+| 2026-10-24 | Debian Sid / native | dbg | [Phase 1.8 Debug launcher](#phase-18-debug-launcher) | [x] Shutdown recheck at 18:34:22: compositor exit code 0. Log: `/tmp/morph-xkb-report.o5SpWP/dbg-launcher-logs/morph-startup.log` |
+| 2026-10-24 | Debian Sid / native | runtime | [Phase 1.9 Runtime launcher](#phase-19-runtime-launcher) | [x] Shutdown recheck at 18:38:11: compositor exit code 0. Log: `/tmp/morph-xkb-report.o5SpWP/runtime-launcher-logs/morph-startup.log` |
 | open | Development system / nested | runtime | [Phase 1 Input and modifiers](#phase-1-input-and-modifiers) | open |
 | open | Debian Sid / native | runtime | [Phase 1 Input and modifiers](#phase-1-input-and-modifiers) | open |
 | open | Development system / nested | dbg | [Phase 2.1 Config overrides environment](#phase-21-config-overrides-environment) | open |
@@ -921,11 +1120,13 @@ Native distribution tests use the helpers from the `Preparation` section.
 | open | Development system / nested | dbg | [Phase 2.6 Invalid layout ID](#phase-26-invalid-layout-id) | open |
 | open | Development system / nested | dbg | [Phase 2.7 Reject keyboard reload](#phase-27-keyboard-reload-rejected-during-phase-2) | open |
 | open | Debian Sid / native | runtime | [Phase 2 Configuration and devices](#phase-2-configuration-and-devices) | open |
+| not recorded | Debian Sid / native | runtime | [Phase 3.0 First validation](#phase-30-first-validation-of-items-1-and-2) | [x] The maintainer confirmed that the full native procedure passed, including reload, failure cases, the window switcher, and conflict diagnostics. The optional nested check for the current version remains pending. |
+| open | Development system / nested | dbg | [Short nested check (optional)](#short-nested-check-optional) | open |
 | open | Development system / nested | dbg | [Phase 3.1 Valid keymap reload](#phase-31-valid-keymap-reload-with-open-clients) | open |
 | open | Development system / nested | dbg | [Phase 3.2 Invalid reload](#phase-32-invalid-reload-has-no-effect) | open |
 | open | Development system / nested | dbg | [Phase 3.3 Reload with held modifiers](#phase-33-reload-with-held-modifiers) | open |
 | open | Development system / native | runtime | [Phase 3.4 Reordered groups and two keyboards](#phase-34-reload-with-reordered-groups-and-two-keyboards) | open |
-| open | Debian Sid / native | runtime | [Phase 3 through the current phase](#phase-3-keymap-reload-and-clients) | open |
+| open | Debian Sid / native | runtime | [Phase 3 through the current phase](#phase-31-keymap-reload-and-clients) | open |
 | open | Arch/CachyOS / native | runtime | [Relevant final tests](#distribution-tests) | open |
 | open | Fedora / native | runtime | [Relevant final tests](#distribution-tests) | open |
 
@@ -937,4 +1138,4 @@ Native distribution tests use the helpers from the `Preparation` section.
 - [ ] Runtime and dbg were tested for checks involving the launcher or build variant.
 - [ ] Every failure, unavailable hardware component, and untested backend is documented with the commit and log path.
 
-References: [Roadmap](Roadmap.de.md), [automated tests](docs/TESTS.md), [configuration](docs/CONFIG.md), [environment](docs/ENVIRONMENT.md).
+References: [Roadmap](Roadmap.md), [automated tests](docs/TESTS.md), [configuration](docs/CONFIG.md), [environment](docs/ENVIRONMENT.md).

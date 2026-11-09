@@ -32,7 +32,11 @@ bool comp_keyboard_config_init(struct comp_keyboard_config *config);
 bool comp_keyboard_config_set(struct comp_keyboard_config *config, const char *key, const char *value);
 /** Validate resolved values and compile a keymap without implicit error recovery. */
 bool comp_keyboard_config_compile(struct comp_keyboard_config *config);
-/** Compare resolved settings before accepting a config-only reload. */
+/** Compare resolved settings to skip unnecessary live keymap replacements. */
 bool comp_keyboard_config_equal(const struct comp_keyboard_config *a, const struct comp_keyboard_config *b);
+
+/** Log changed resolved RMLVO values after a successful keymap reload. */
+void comp_keyboard_config_log_changes(const struct comp_keyboard_config *before,
+	const struct comp_keyboard_config *after);
 /** Release owned settings and the shared keymap reference. */
 void comp_keyboard_config_finish(struct comp_keyboard_config *config);

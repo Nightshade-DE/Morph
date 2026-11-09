@@ -1,9 +1,11 @@
 # Roadmap: Full XKB Support
 
-As of: 2026-09-05. Status: phases 1 and 2 implemented; runtime acceptance pending.
+Status: phases 1 and 2 implemented and tested natively on Debian Sid;
+Phase 3.0 passed natively, with the optional nested check pending.
 English version: [Roadmap.md](Roadmap.md).
 Foundations: [audit](problems.de.md) and [requirements](copilot-instructions.md).
-Source references refer to the audit baseline `c4523e9`.
+Audit baseline: `c4523e9` from 2026-09-05. Source references refer to this
+baseline unless updated entry points are provided.
 
 ## Goal and scope
 
@@ -29,9 +31,9 @@ These decisions serve as the basis for implementation and tests.
   environment files retain `de,us`. Empty options disable options;
   missing and explicitly empty values are not universally treated as equivalent.
 - The `[keyboard]` section in `morph.conf` supplies reloadable RMLVO values.
-  Reload reads this file and uses the environment values resolved at
-  startup for unspecified values. Environment files are not executed again
-  as shell code in the compositor.
+  Reload first re-sources the system and user environment files through the
+  shell, then reads the config. Explicit `[keyboard]` values take priority;
+  unset fields use the current environment defaults and built-in defaults.
 - State and group index apply per keyboard. Without device selection,
   runtime commands target the active seat keyboard; without an active keyboard,
   an explicit error is returned. New devices start with the configured initial group.
@@ -81,9 +83,10 @@ Acceptance: press/release sequences, CapsLock, AltGr, and repeated
 Native and nested input are tested separately.
 
 Implementation status: code and automated regression tests for phase 1 are
-implemented on `feature/xkb-full-support`. The build and all three Meson tests pass
-with wlroots 0.19.3. Actual native/nested session checks remain pending; see
-`docs/TESTS.md`.
+implemented on `feature/xkb-full-support`. The original automated check
+with wlroots 0.19.3 passed all three Meson tests available at that time. After the
+main merge, Phase 1 passed the full native checks on Debian Sid.
+Further test details are in `docs/TESTS.md` and the acceptance report.
 
 Manual acceptance: [report_current.md](report_current.md), **Phase 1**.
 
@@ -109,36 +112,56 @@ Invalid rules, variants, and layouts, as well as installation failures, produce
 understandable errors without leaks or silent changes to another configuration.
 
 Implementation status: code and automated tests for phase 2 are implemented.
-All three Meson suites pass; configuration and keyboard tests also pass with
-AddressSanitizer/UBSan. Both launchers have been tested with system/user/caller
-values. Actual hotplug and native/nested sessions still require manual acceptance.
-Changed keyboard settings still require a restart; replacement
-while running follows in phase 3.
+The original three Meson suites passed; configuration and keyboard tests also
+passed with AddressSanitizer/UBSan. Both launchers have been tested with system/user/caller
+values. After the main merge, Phase 2 passed the full native checks on Debian Sid,
+including device and hotplug checks. Since Phase 3.0, the previous restart restriction
+for keyboard changes has been replaced by validated live reloads under the
+conditions described below.
 
 Manual acceptance: [report_current.md](report_current.md), **Phase 2**.
 
 ## Phase 3: Client synchronization and keymap reload
 
 Priority: high. Dependencies: phases 1 and 2. Finding: XKB-04, in part.
-Entry points: `src/main.c:4738`, `src/main.c:2810`, `src/main.c:4497`.
+Entry points: `src/keyboard.c:186`, `src/keyboard.c:368`, `src/main.c:5466`.
 
-- [ ] Use the existing wlroots path for depressed/latched/locked and the effective
+- [x] Use the existing wlroots path for depressed/latched/locked and the effective
   group; do not build a parallel manual `wl_keyboard` implementation.
-- [ ] Prepare and validate keymaps for reload before replacing existing
+- [x] Prepare and validate keymaps for reload before replacing existing
   ones. On installation failures, also restore keyboards already changed;
   a rollback failure must be explicitly visible.
 - [ ] Handle held keys, modifiers, locks, and the group during replacement according to
   a documented policy. Match the group by layout/variant and occurrence;
   if it is missing, fall back to the configured initial group.
-- [ ] Deliver the keymap and associated modifiers in the correct order;
-  cover focus changes, new clients, and changes to the active keyboard.
-- [ ] Preserve repeat rate and delay during reload.
+- [x] Deliver the keymap and associated modifiers in the correct order through wlroots;
+  code paths for focus changes, new clients, and active keyboard changes are in
+  place. Full client/protocol acceptance is still pending.
+- [x] Preserve repeat rate and delay during reload; verified by automated tests.
 
 Acceptance: clients see the same effective group as Morph. A failed
 reload preserves the previous working configuration; successful reloads
 require neither a client restart nor reconnecting the keyboard.
 
-Manual acceptance: [report_current.md](report_current.md), **Phase 3**.
+Implementation status: items 1, 2, 4, and 5 are implemented; Phase 3.0 passed the full
+native checks on Debian Sid. The optional nested check for the current version
+remains pending. Repeat rate and delay preservation are covered by the automated
+reload test.
+Until item 3 provides state migration, changed RMLVO settings require no keys held
+down, no active modifiers/locks, and group 0 on every keyboard. Installation failures
+restore previous keymaps; a failed rollback is logged and detaches the affected device.
+State migration and the full client/protocol acceptance checks in Phases 3.1
+through 3.4 remain pending.
+Item 3 is therefore the remaining implementation task in this phase;
+the outstanding protocol acceptance is a separate validation task.
+
+Related fixes restore Alt-Tab completion and Escape cancellation, report
+XKB/Morph binding conflicts, and show the component, device, and old and new
+values in reload logs. The output shutdown crash is fixed and covered by automated
+tests and native debug/runtime rechecks.
+
+Manual acceptance: [report_current.md](report_current.md), **Phase 3.0 passed natively**;
+the optional nested check remains pending. The unimplemented parts follow afterward.
 
 ## Phase 4: Layout-independent shortcuts
 
@@ -166,6 +189,9 @@ Entry points: `src/config.h:27`, `src/server.h:170`.
 
 - [ ] Implement shared operations for next, previous, set-index, and status
   queries; CLI, bindings, and IPC use the same logic.
+- [ ] Provide a configurable Morph binding for the next XKB group;
+  planned default: `Super+K`. It uses the shared Next operation,
+  not an invented `grp:` option or a hardcoded shortcut.
 - [ ] Implement device selection and behavior when the active keyboard is removed;
   short-lived IDs must not silently target a different device.
 - [ ] Synchronize group changes through appropriate wlroots state functions;

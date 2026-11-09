@@ -135,7 +135,7 @@ Edit ~/.config/morph/environment, for example MORPH_DEBUG_POINTER_FOCUS=1,
 then trigger a reload again.
 
 Filter:
-  rg -n "reload: sourced environment file|reload: environment |reload: keeping caller-provided|reload: applied" "$LOG_BASE"/morph*.log
+  rg -n "reload: sourced environment file|reload: environment: |reload: keeping caller-provided|reload: applied" "$LOG_BASE"/morph*.log
 
 Expected:
 - both the system and user environment file are listed when they exist
